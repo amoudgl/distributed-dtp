@@ -1,167 +1,302 @@
-# coding=utf-8
+""" Script that runs Pytorch lightning version of the DTP models.
+
+Use `python main_pl.py --help` to see a list of all available arguments.
+"""
 import argparse
-import os
-import pickle
-import sys
+import dataclasses
+import json
+import logging
+import textwrap
+import warnings
+from argparse import Namespace
+from dataclasses import asdict
+from typing import Callable, List, Literal, Type, TypeVar, Union
 
 import torch
-from tqdm import tqdm
+from pytorch_lightning import Trainer
+from pytorch_lightning.core.datamodule import LightningDataModule
+from pytorch_lightning.core.lightning import LightningModule
+from pytorch_lightning.loggers.wandb import WandbLogger
+from pytorch_lightning.utilities.seed import seed_everything
+from simple_parsing import ArgumentParser
+from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
+from torch import nn
 
-from target_prop.legacy import *
-
-parser = argparse.ArgumentParser(description="Testing idea of Yoshua")
-
-parser.add_argument(
-    "--epochs", type=int, default=15, help="number of epochs to train feedback weights(default: 15)"
+import wandb
+from target_prop.config import Config
+from target_prop.models import DTP, BaselineModel, ParallelDTP, TargetProp, VanillaDTP
+from target_prop.utils import make_reproducible
+from target_prop.networks import (
+    ResNet18,
+    ResNet34,
+    SimpleVGG,
+    SimpleVGG2,
+    LeNet,
 )
-parser.add_argument(
-    "--iter",
-    nargs="+",
-    type=int,
-    default=[5, 10],
-    help="number of learning iterating of feedback weights layer-wise per batch (default: [5, 10])",
-)
-parser.add_argument("--batch-size", type=int, default=128, help="batch dimension (default: 128)")
-parser.add_argument("--device-label", type=int, default=0, help="device (default: 1)")
-parser.add_argument("--lr_f", type=float, default=0.05, help="learning rate (default: 0.05)")
-parser.add_argument(
-    "--lr_b",
-    nargs="+",
-    type=float,
-    default=[0.05, 0.05],
-    help="learning rates for the feedback weights (default: [0.05, 0.05])",
-)
-parser.add_argument("--beta", type=float, default=0.1, help="nudging parameter (default: 0.1)")
-parser.add_argument(
-    "--C", nargs="+", type=int, default=[32, 64], help="tab of channels (default: [32, 64])"
-)
-parser.add_argument(
-    "--noise",
-    nargs="+",
-    type=float,
-    default=[0.05, 0.5],
-    help="tab of noise amplitude (default: [0.05, 0.5])",
-)
-parser.add_argument(
-    "--activation",
-    type=str,
-    default="elu",
-    help="activation function in conv layers (default: elu)",
-)
-parser.add_argument(
-    "--path", type=str, default=None, help="Path directory for the results (default: None)"
-)
-parser.add_argument(
-    "--last-trial",
-    default=False,
-    action="store_true",
-    help="specifies if the current trial is the last one (default: False)",
-)
-parser.add_argument("--seed", type=int, default=None, help="seed selected (default: None)")
-parser.add_argument(
-    "--scheduler",
-    default=False,
-    action="store_true",
-    help="use of a learning rate scheduler for the forward weights (default: False)",
-)
-parser.add_argument("--wdecay", type=float, default=None, help="Weight decay (default: None)")
 
-args = parser.parse_args()
+HParams = TypeVar("HParams", bound=HyperParameters)
 
-train_loader, test_loader = createDataset(args)
+Model = Union[BaselineModel, DTP, ParallelDTP, VanillaDTP, TargetProp]
 
 
-if args.device_label >= 0:
-    device = torch.device("cuda:" + str(args.device_label))
-else:
-    device = torch.device("cpu")
+def main(parser: ArgumentParser = None):
+    """Main script."""
+    # Allow passing a parser in, in case this is used as a subparser action for another program.
+    parser = parser or ArgumentParser(description=__doc__)
+    assert parser is not None
+    action_subparsers = parser.add_subparsers(
+        title="action", description="Which action to take.", required=True
+    )
+
+    run_parser = action_subparsers.add_parser("run", help="Single run.", description=run.__doc__)
+    run_parser.set_defaults(_action=run)
+    add_run_args(run_parser)
+
+    sweep_parser = action_subparsers.add_parser(
+        "sweep", help="Hyper-Parameter sweep.", description=sweep.__doc__
+    )
+    sweep_parser.set_defaults(_action=sweep)
+    add_sweep_args(sweep_parser)
+
+    args = parser.parse_args()
+    # convert the parsed args into the arguments that will be passed to the chosen action function.
+    action_kwargs = vars(args)
+    action = action_kwargs.pop("_action")
+
+    action(**action_kwargs)
 
 
-if args.seed is not None:
-    seed = args.seed
-    torch.manual_seed(seed)
-else:
-    g = torch.Generator(device=device)
-    seed = g.seed()
-    torch.manual_seed(seed)
+def add_run_args(parser: ArgumentParser):
+    """Adds the command-line arguments for launching a run."""
+    # NOTE: if args for config are added here, then command becomes
+    # python main.py (config args) [dtp|parallel_dtp] (model ags)
+    # parser.add_arguments(Config, dest="config")
 
-print("Selected seed: {}".format(seed))
+    subparsers = parser.add_subparsers(
+        title="model", description="Type of model to use.", required=True
+    )
+
+    for option_str, help_str, model_type in [
+        ("dtp", "Use DTP", DTP),
+        ("parallel_dtp", "Use the parallel variant of DTP", ParallelDTP),
+        ("vanilla_dtp", "Use 'vanilla' DTP", VanillaDTP),
+        ("tp", "Use 'vanilla' Target Propagation", TargetProp),
+        ("backprop", "Use regular backprop", BaselineModel),
+    ]:
+        subparser = subparsers.add_parser(option_str, help=help_str, description=model_type.__doc__)
+        # subparser.add_arguments(Config, dest="config")
+        # subparser.add_arguments(model_type.HParams, dest="hparams")  # type: ignore
+        subparser.set_defaults(model_type=model_type)
+
+        net_subparsers = subparser.add_subparsers(
+            title="network", description="Which network architecture to use", required=True
+        )
+
+        for option_str, net_help_str, net_fn, net_hparams in [
+            ("simple_vgg", "VGG-like architecture", SimpleVGG, SimpleVGG.HParams),
+            ("simple_vgg2", "VGG-like 2.0 architecture", SimpleVGG2, SimpleVGG2.HParams),
+            ("resnet18", "ResNet18 architecture", ResNet18, ResNet18.HParams),
+            ("resnet34", "ResNet34 architecture", ResNet34, ResNet34.HParams),
+            ("lenet", "LeNet-like architecture", LeNet, LeNet.HParams),
+        ]:
+            net_subparser = net_subparsers.add_parser(
+                option_str, help=help_str + " with a " + net_help_str, description=net_fn.__doc__,
+            )
+            net_subparser.add_arguments(model_type.HParams, dest="hparams")
+            net_subparser.add_arguments(net_hparams, dest="network_hparams")
+            net_subparser.add_arguments(Config, dest="config")
+            net_subparser.set_defaults(network_type=net_fn)
+
+    # Fixes a weird little argparse bug with metavar.
+    subparsers.metavar = "{" + ",".join(subparsers._name_parser_map.keys()) + "}"
+
+
+def run(
+    config: Config,
+    model_type: Type[Model],
+    hparams: HyperParameters,
+    network_type: Callable[..., nn.Sequential],
+    network_hparams: HyperParameters,
+) -> float:
+    """Executes a run, where a model of the given type is trained, with the given hyper-parameters."""
+    print(f"Type of model used: {model_type}")
+    print("Config:")
+    print(config.dumps_json(indent="\t"))
+    print("HParams:")
+    print(hparams.dumps_json(indent="\t"))
+    print("Network HParams:")
+    print(network_hparams.dumps_json(indent="\t"))
+    print(f"Selected seed: {config.seed}")
+    seed_everything(seed=config.seed, workers=True)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    assert isinstance(hparams, model_type.HParams), "HParams type should match model type"
+
+    if config.debug:
+        print(f"Setting the max_epochs to 1, since '--debug' was passed.")
+        hparams.max_epochs = 1
+        root_logger.setLevel(logging.DEBUG)
+
+    # Create the datamodule:
+    datamodule = config.make_datamodule(batch_size=hparams.batch_size)
+
+    # Create the network
+    network: nn.Sequential = network_type(
+        in_channels=datamodule.dims[0], n_classes=datamodule.num_classes, hparams=network_hparams,
+    )
+
+    # Create the model
+    model: Model = model_type(
+        datamodule=datamodule,
+        network=network,
+        hparams=hparams,
+        config=config,
+        network_hparams=network_hparams,
+    )
+
+    # --- Create the trainer.. ---
+    # NOTE: Now each algo can customize how the Trainer gets created.
+    trainer = model.create_trainer()
+
+    # --- Run the experiment. ---
+    trainer.fit(model, datamodule=datamodule)
+
+    # Run on the test set:
+    test_results = trainer.test(model, datamodule=datamodule, verbose=True)
+
+    wandb.finish()
+    top1_accuracy: float = test_results[0]["test/accuracy"]
+    top5_accuracy: float = test_results[0]["test/top5_accuracy"]
+    print(f"Test top1 accuracy: {top1_accuracy:.1%}")
+    print(f"Test top5 accuracy: {top5_accuracy:.1%}")
+    return top1_accuracy, top5_accuracy
+
+
+def add_sweep_args(parser: ArgumentParser):
+    subparsers = parser.add_subparsers(
+        title="model", description="Type of model to use for the sweep.", required=True, help=None,
+    )
+
+    for option_str, help_str, model_type in [
+        ("dtp", "Use DTP", DTP),
+        ("parallel_dtp", "Use the parallel variant of DTP", ParallelDTP),
+        ("vanilla_dtp", "Use 'vanilla' DTP", VanillaDTP),
+        ("tp", "Use 'vanilla' Target Propagation", TargetProp),
+        ("backprop", "Use regular backprop", BaselineModel),
+    ]:
+        subparser = subparsers.add_parser(option_str, help=help_str, description=model_type.__doc__)
+        # NOTE: Add the config to the subparsers.
+        # subparser.add_arguments(Config, dest="config")  # note: moved to the last subparser below.
+        # NOTE: Don't add the command-line options for the arguments here, since they will get
+        # overwritten with sampled values.
+        # subparser.add_arguments(model_type.HParams, dest="hparams")
+        subparser.set_defaults(model_type=model_type)
+
+        net_subparsers = subparser.add_subparsers(
+            title="network", description="Which network architecture to use", required=True
+        )
+
+        for option_str, net_help_str, net_fn, net_hparams in [
+            ("simple_vgg", "VGG-like architecture", SimpleVGG, SimpleVGG.HParams),
+            ("simple_vgg2", "VGG-like 2.0 architecture", SimpleVGG2, SimpleVGG2.HParams),
+            ("resnet18", "ResNet18 architecture", ResNet18, ResNet18.HParams),
+            ("resnet34", "ResNet34 architecture", ResNet34, ResNet34.HParams),
+            ("lenet", "LeNet-like architecture", LeNet, LeNet.HParams),
+        ]:
+            net_subparser = net_subparsers.add_parser(
+                option_str, help=help_str + " with a " + net_help_str, description=net_fn.__doc__,
+            )
+            net_subparser.add_arguments(Config, dest="config")
+            net_subparser.set_defaults(network_hparams_type=net_hparams)
+            net_subparser.set_defaults(network_type=net_fn)
+            # NOTE: This will be a 'fixed' hyper-parameter. We don't want to sample it.
+            net_subparser.add_argument(
+                "--max_epochs",
+                type=int,
+                default=10,
+                help="How many epochs to run for each configuration.",
+            )
+
+    parser.add_argument("--n-runs", "--n_runs", type=int, default=1, help="How many runs to do.")
+    # Fixes a weird little argparse bug with metavar.
+    subparsers.metavar = "{" + ",".join(subparsers._name_parser_map.keys()) + "}"
+
+
+def sweep(
+    config: Config,
+    model_type: Type[Model],
+    network_type: Callable[..., nn.Sequential],
+    network_hparams_type: Type[HyperParameters],
+    n_runs: int = 1,
+    **fixed_hparams,
+):
+    """Performs a hyper-parameter sweep.
+
+    The hyper-parameters are sampled randomly from their priors. This then calls `run` with the
+    sampled hyper-parameters.
+    """
+    print("Config:")
+    print(config.dumps_json(indent="\t"))
+
+    if config.seed is None:
+        config.seed = 123
+        warnings.warn(RuntimeWarning(f"Using default random seed of {config.seed}."))
+
+    print(f"Type of model used: {model_type}")
+    hparam_type = model_type.HParams
+    hparam_space_dict = hparam_type().get_orion_space()
+    network_hparam_space_dict = network_hparams_type().get_orion_space()
+    print("Algorithm HPO search space:")
+    # print(space_dict)
+    print(json.dumps(hparam_space_dict, indent="\t"))
+    print("Network HPO search space:")
+    print(json.dumps(network_hparam_space_dict, indent="\t"))
+
+    if fixed_hparams:
+        print(f"Fixed hyper-parameter values: {fixed_hparams}")
+
+    # Sample the hparams of each run in advance, just to make sure that they are properly seeded and
+    # not always the same.
+    # NOTE: This is fine for now, since we use random search.
+    run_hparams = []
+    run_network_hparams = []
+    assert config.seed is not None
+    with make_reproducible(seed=config.seed):
+        for run_index in range(n_runs):
+            hparams = hparam_type.sample()
+            network_hparams = network_hparams_type.sample()
+            if fixed_hparams:
+                # Check if they are for the network or for the Model (algo) hparams:
+                # Fix some of the hyper-paremters
+                hparams_dict = hparams.to_dict()
+                from dataclasses import replace
+
+                hparams = replace(
+                    hparams, **{k: v for k, v in fixed_hparams.items() if hasattr(hparams, k)}
+                )
+                network_hparams = replace(
+                    network_hparams,
+                    **{k: v for k, v in fixed_hparams.items() if hasattr(network_hparams, k)},
+                )
+            run_hparams.append(hparams)
+            run_network_hparams.append(network_hparams)
+
+    performances = []
+    for run_index, (run_hparams, network_hparams) in enumerate(
+        zip(run_hparams, run_network_hparams)
+    ):
+        print(f"\n\n----------------- Starting run #{run_index+1}/{n_runs} -------------------\n\n")
+        performance = run(
+            config=config,
+            model_type=model_type,
+            hparams=run_hparams,
+            network_type=network_type,
+            network_hparams=network_hparams,
+        )
+        performances.append(performance)
+    return performances
 
 
 if __name__ == "__main__":
-
-    # Create a directory to save results and hyperparameters
-    if args.path is not None:
-        BASE_PATH = createPath(args)
-        command_line = " ".join(sys.argv)
-        createHyperparameterfile(BASE_PATH, command_line, seed, args)
-
-    # Create neural network
-    net = VGG(args)
-    net = net.to(device)
-    print(net)
-
-    # Create optimizers for forward and feedback weights
-    criterion = torch.nn.CrossEntropyLoss(reduction="none")
-    optimizers = createOptimizers(net, args, forward=True)
-
-    if args.scheduler:
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizers[0], 85, eta_min=1e-5)
-        print("We are using a learning rate scheduler!")
-
-    train_acc = []
-    test_acc = []
-
-    # train the neural network by DTP
-    for epoch in range(args.epochs):
-        train_loss = 0
-        correct = 0
-        total = 0
-        pbar = tqdm(train_loader, desc=f"Training Epoch {epoch}")
-
-        for batch_idx, (data, target) in enumerate(pbar):
-            net.train()
-            data, target = data.to(device), target.to(device)
-
-            # compute DTP gradient on the current batch
-            pred, loss, layer_losses_b, layer_losses_f = train_batch(
-                args, net, data, optimizers, target, criterion
-            )
-
-            train_loss += loss.item()
-            _, predicted = pred.max(1)
-            targets = target
-            total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
-            train_accuracy = correct / total
-            loss_f = sum(layer_losses_f) / len(layer_losses_f)
-            loss_b = sum(layer_losses_b) / len(layer_losses_b)
-
-            pbar.set_postfix(
-                {
-                    "Loss": f"{loss.item():.3f}",
-                    "Train Acc": f"{train_accuracy:.2%}",
-                    "F_loss": f"{loss_f:.3f}",
-                    "B_loss": f"{loss_b:.3f}",
-                }
-            )
-            # progress_bar(batch_idx, len(train_loader), 'Loss: %.3f | Train Acc: %.3f%% (%d/%d)'% (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
-
-        train_acc.append(100.0 * correct / total)
-        test_acc_temp = test(net, test_loader, device)
-        test_acc.append(test_acc_temp)
-
-        # save accuracies in the results directory
-        if args.path is not None:
-            results = {"train_acc": train_acc, "test_acc": test_acc}
-            outfile = open(os.path.join(BASE_PATH, "results"), "wb")
-            pickle.dump(results, outfile)
-            outfile.close()
-
-        if args.scheduler:
-            scheduler.step()
-
-        # if the train accuracy is less than 30%, kill training
-        if train_accuracy < 0.30:
-            print(f"Accuracy is terrible ({train_accuracy:.2%}), exiting early")
-            break
+    main()
