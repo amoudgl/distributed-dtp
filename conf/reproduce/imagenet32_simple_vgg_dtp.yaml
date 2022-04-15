@@ -1,0 +1,37 @@
+# @package _global_
+network:
+  channels: [128, 128, 256, 256, 512] 
+  activation: elu
+
+datamodule:
+  dataset: "imagenet32"
+  data_dir: "data"
+  num_workers: 16
+  pin_memory: True
+  shuffle: False
+  batch_size: 256
+
+algo:
+  use_scheduler: True
+  batch_size: 128
+  feedback_training_iterations: [20, 30, 35, 55, 20]
+  noise: [0.4, 0.4, 0.2, 0.2, 0.08]
+  max_epochs: 90
+  beta: 0.7
+  feedback_samples_per_iterations: 1
+  early_stopping_patience: 0
+  init_symmetric_weights: False
+  plot_every: 10000
+  f_optim:
+    type: sgd
+    lr: 0.08
+    weight_decay: 1e-4
+    momentum: 0.9
+  b_optim:
+    type: sgd
+    lr: [1e-4, 3e-5, 8e-3, 8e-3, 0.18]
+    weight_decay: None
+    momentum: 0.9
+  scheduler:
+    T_max: 85
+    eta_min: 1e-5

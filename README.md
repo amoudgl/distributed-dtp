@@ -6,6 +6,27 @@ The following code runs on Python > 3.6 with Pytorch 1.7.0.
 pip install -e .
 ```
 
+
+## Running the code (Hydra)
+
+```
+python main_pl.py \
+model=dtp \
+network=simple_vgg \
+dataset=imagenet32 \
+trainer=default \
+seed=123 \
+dataset.batch_size=256 \
+model.f_optim.type=sgd \
+model.f_optim.lr=0.01 \
+model.b_optim.feedback_training_iterations=[25,35,40,60,25] \
+model.b_optim.type=sgd \
+model.b_optim.momentum=0.9 \
+model.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18] \
+model.scheduler=cosine \
+```
+
+
 ## Running the code
 To run the pytorch-lightning re-implementation of DTP on CIFAR-10, use the following command:
 ```console

@@ -1,0 +1,6 @@
+defaults:
+  - datamodule: imagenet32
+  - algo: dtp
+  - network: simple_vgg
+  - trainer: default
+  - reproduce: null
