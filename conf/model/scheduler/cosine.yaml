@@ -1,0 +1,4 @@
+# @package model.hparams
+_target_: torch.optim.lr_scheduler.CosineAnnealingLR
+T_max: 85
+eta_min: 1e-5

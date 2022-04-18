@@ -1,6 +1,11 @@
 defaults:
   - datamodule: imagenet32
-  - algo: dtp
+  - model: dtp
   - network: simple_vgg
   - trainer: default
   - reproduce: null
+
+# meta experiment info
+seed: 123
+debug: False
+data_dir: /home/amoudgl/Projects/data  # absolute path to datasets directory

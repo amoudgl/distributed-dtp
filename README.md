@@ -17,13 +17,13 @@ dataset=imagenet32 \
 trainer=default \
 seed=123 \
 dataset.batch_size=256 \
-model.f_optim.type=sgd \
-model.f_optim.lr=0.01 \
-model.b_optim.feedback_training_iterations=[25,35,40,60,25] \
-model.b_optim.type=sgd \
-model.b_optim.momentum=0.9 \
-model.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18] \
-model.scheduler=cosine \
+model.hparams.f_optim.type=sgd \
+model.hparams.f_optim.lr=0.01 \
+model.hparams.b_optim.feedback_training_iterations=[25,35,40,60,25] \
+model.hparams.b_optim.type=sgd \
+model.hparams.b_optim.momentum=0.9 \
+model.hparams.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18] \
+model.hparams.scheduler=cosine \
 ```
 
 

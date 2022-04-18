@@ -1,0 +1,13 @@
+_target_: pytorch_lightning.Trainer
+max_epochs: 90
+gpus: 1
+accelerator: None
+reload_dataloaders_every_epoch: False
+detect_anomaly: True
+limit_train_batches: 1.0
+limit_val_batches: 1.0
+limit_test_batches: 1.0
+enable_checkpointing: True
+profiler: None
+logger:
+  _target_: pytorch_lightning.loggers.WandbLogger

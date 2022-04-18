@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
 import numpy as np
 import torch
 import wandb
+from omegaconf import OmegaConf
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.utilities.seed import seed_everything
@@ -216,13 +217,13 @@ class DTP(LightningModule):
         datamodule: LightningDataModule,
         network: Network,
         hparams: "DTP.HParams",
-        config: Config,
+        full_config: Config,
         network_hparams: HyperParameters = None,
     ):
         super().__init__()
         self.hp: DTP.HParams = hparams
         self.net_hp = network_hparams or network.hparams
-        self.config = config
+        self.config = full_config
         if self.config.seed is not None:
             # NOTE: This is currently being done twice: Once in main_pl and once again here.
             seed_everything(seed=self.config.seed, workers=True)
@@ -302,10 +303,10 @@ class DTP(LightningModule):
         self.top5_accuracy = Accuracy(top_k=5)
         self.save_hyperparameters(
             {
-                "hp": self.hp.to_dict(),
-                "config": self.config.to_dict(),
+                "hp": OmegaConf.to_container(self.hp),
+                "config": OmegaConf.to_container(self.config),
                 "model_type": type(self).__name__,
-                "net_hp": self.net_hp.to_dict(),
+                "net_hp": OmegaConf.to_container(self.net_hp),
                 "net_type": type(self.forward_net).__name__,
             }
         )
@@ -318,8 +319,6 @@ class DTP(LightningModule):
         # per batch.
         self.automatic_optimization = False
         self.criterion = nn.CrossEntropyLoss(reduction="none")
-        print("Hyper-Parameters:")
-        print(self.hp.dumps_json(indent="\t"))
         # TODO: Could use a list of metrics from torchmetrics instead of just accuracy:
         # self.supervised_metrics: List[Metrics]
         self._feedback_optimizers: Optional[List[Optional[Optimizer]]] = None

@@ -1,0 +1,16 @@
+defaults:
+  - optim/f_optim
+  - optim/b_optim
+  - optional scheduler: cosine
+
+_target_: target_prop.models.DTP
+hparams:
+  use_scheduler: True
+  feedback_training_iterations: [20, 30, 35, 55, 20]
+  noise: [0.4, 0.4, 0.2, 0.2, 0.08]
+  max_epochs: 90
+  beta: 0.7
+  feedback_samples_per_iterations: 1
+  early_stopping_patience: 0
+  init_symetric_weights: False
+  plot_every: 10000

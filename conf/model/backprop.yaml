@@ -1,0 +1,7 @@
+defaults:
+  - optim/f_optim
+  - optional scheduler: step
+
+use_scheduler: False
+max_epochs: 90
+early_stopping_patience: 0

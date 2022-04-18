@@ -1,0 +1,6 @@
+# @package model.hparams
+b_optim:
+  type: sgd
+  lr: [1e-4, 3e-5, 8e-3, 8e-3, 0.18]
+  weight_decay: None
+  momentum: 0.9
