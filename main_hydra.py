@@ -29,7 +29,6 @@ def main(cfg: DictConfig) -> None:
                         network_hparams=cfg.network)
 
     # create trainer
-    breakpoint()
     if cfg.debug:
         # define trainer debug behavior
         cfg.trainer.accelerator = None
