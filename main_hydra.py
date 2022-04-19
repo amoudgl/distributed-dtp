@@ -1,3 +1,5 @@
+import os
+
 import hydra
 import wandb
 from hydra.utils import instantiate
@@ -7,8 +9,9 @@ from torch import nn
 
 @hydra.main(config_path="conf", config_name="config")
 def main(cfg: DictConfig) -> None:
-    # print whole config
+    # print run info
     print(OmegaConf.to_yaml(cfg))
+    print("Working directory: {}".format(os.getcwd()))
 
     # create datamodule
     datamodule = instantiate(cfg.datamodule,
