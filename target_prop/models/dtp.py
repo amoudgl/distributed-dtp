@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
 import numpy as np
 import torch
 import wandb
+from hydra.utils import instantiate
 from omegaconf import OmegaConf
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers import WandbLogger
@@ -799,18 +800,23 @@ class DTP(LightningModule):
                 assert lr == 0.0, (i, lr, self.feedback_lrs, type(feedback_layer))
             else:
                 assert lr != 0.0
-                feedback_layer_optimizer = self.hp.b_optim.make_optimizer(feedback_layer, lrs=[lr])
+                feedback_layer_optimizer = instantiate(
+                    self.hp.b_optim, lr=lr, params=feedback_layer.parameters()
+                )
+                # feedback_layer_optimizer = self.hp.b_optim.make_optimizer(feedback_layer, lrs=[lr])
                 feedback_layer_optim_config = {"optimizer": feedback_layer_optimizer}
                 configs.append(feedback_layer_optim_config)
 
         ## Forward optimizer:
-        forward_optimizer = self.hp.f_optim.make_optimizer(self.forward_net)
+        # forward_optimizer = self.hp.f_optim.make_optimizer(self.forward_net)
+        forward_optimizer = instantiate(self.hp.f_optim, params=self.forward_net.parameters())
         forward_optim_config: Dict[str, Any] = {
             "optimizer": forward_optimizer,
         }
         if self.hp.use_scheduler:
             # Using the same LR scheduler as the original code:
-            lr_scheduler = self.hp.lr_scheduler.make_scheduler(forward_optimizer)
+            # lr_scheduler = self.hp.lr_scheduler.make_scheduler(forward_optimizer)
+            lr_scheduler = instantiate(self.hp.lr_scheduler.scheduler, optimizer=forward_optimizer)
             lr_scheduler_config = {
                 # REQUIRED: The scheduler instance
                 "scheduler": lr_scheduler,
