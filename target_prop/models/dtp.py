@@ -816,18 +816,20 @@ class DTP(LightningModule):
         if self.hp.use_scheduler:
             # Using the same LR scheduler as the original code:
             # lr_scheduler = self.hp.lr_scheduler.make_scheduler(forward_optimizer)
-            lr_scheduler = instantiate(self.hp.lr_scheduler.scheduler, optimizer=forward_optimizer)
+            lr_scheduler = instantiate(
+                self.config.scheduler.lr_scheduler, optimizer=forward_optimizer
+            )
             lr_scheduler_config = {
                 # REQUIRED: The scheduler instance
                 "scheduler": lr_scheduler,
                 # The unit of the scheduler's step size, could also be 'step'.
                 # 'epoch' updates the scheduler on epoch end whereas 'step'
                 # updates it after a optimizer update.
-                "interval": self.hp.lr_scheduler.interval,
+                "interval": self.config.scheduler.interval,
                 # How many epochs/steps should pass between calls to
                 # `scheduler.step()`. 1 corresponds to updating the learning
                 # rate after every epoch/step.
-                "frequency": self.hp.lr_scheduler.frequency,
+                "frequency": self.config.scheduler.frequency,
             }
             forward_optim_config["lr_scheduler"] = lr_scheduler_config
         configs.append(forward_optim_config)

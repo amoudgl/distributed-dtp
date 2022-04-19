@@ -1,5 +1,4 @@
-# @package model.hparams.scheduler
-scheduler:
+lr_scheduler:
   _target_: torch.optim.lr_scheduler.StepLR
   step_size: 30
   gamma: 0.1

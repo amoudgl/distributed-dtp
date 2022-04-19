@@ -10,20 +10,18 @@ pip install -e .
 ## Running the code (Hydra)
 
 ```
-python main_pl.py \
+python main_hydra.py \
 model=dtp \
 network=simple_vgg \
-dataset=imagenet32 \
+datamodule=imagenet32 \
 trainer=default \
+scheduler=cosine \
 seed=123 \
-dataset.batch_size=256 \
-model.hparams.f_optim.type=sgd \
+datamodule.batch_size=256 \
+model.hparams.feedback_training_iterations=[25,35,40,60,25] \
 model.hparams.f_optim.lr=0.01 \
-model.hparams.b_optim.feedback_training_iterations=[25,35,40,60,25] \
-model.hparams.b_optim.type=sgd \
 model.hparams.b_optim.momentum=0.9 \
-model.hparams.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18] \
-model.hparams.scheduler=cosine \
+model.hparams.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18]
 ```
 
 

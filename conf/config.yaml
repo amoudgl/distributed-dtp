@@ -3,6 +3,7 @@ defaults:
   - model: dtp
   - network: simple_vgg
   - trainer: default
+  - scheduler: null
   - reproduce: null
 
 # meta experiment info
