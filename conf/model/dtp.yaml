@@ -1,5 +1,5 @@
 # CIFAR-10 defaults
-# checkout README or conf/reproduce directory for good defaults for all dataset + model configurations
+# checkout README or conf/reproduce directory for good defaults for other dataset + model configurations
 _target_: target_prop.models.DTP
 hparams:
   use_scheduler: True
