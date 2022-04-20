@@ -1,7 +1,13 @@
-defaults:
-  - optim/f_optim
-  - optional scheduler: step
+# CIFAR-10 defaults
+# checkout README or conf/reproduce directory for good defaults for all dataset + model configurations
+_target_: target_prop.models.BaselineModel
+hparams:
+  use_scheduler: True
+  max_epochs: 90
+  early_stopping_patience: 0
 
-use_scheduler: False
-max_epochs: 90
-early_stopping_patience: 0
+  f_optim:
+    _target_: torch.optim.SGD
+    lr: 0.05
+    weight_decay: 1e-4
+    momentum: 0.9
