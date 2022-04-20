@@ -5,61 +5,27 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import wandb
+from hydra.utils import instantiate
+from omegaconf import DictConfig
 from pytorch_lightning import LightningDataModule, Trainer
 from pytorch_lightning.loggers import WandbLogger
 from simple_parsing.helpers import list_field, subparsers
 from simple_parsing.helpers.fields import choice
 from simple_parsing.helpers.hparams import uniform
 from simple_parsing.helpers.hparams.hparam import log_uniform
-from target_prop.config import Config
 from target_prop.feedback_loss import get_feedback_loss_parallel
 from target_prop.layers import forward_all, forward_each
 from target_prop.metrics import compute_dist_angle
 from target_prop.networks import Network
-from target_prop.optimizer_config import OptimizerConfig
 from target_prop.utils import is_trainable
 from torch import Tensor, nn
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.optim.optimizer import Optimizer
-from target_prop.scheduler_config import StepLRConfig, CosineAnnealingLRConfig
+
 from .dtp import DTP
-from .dtp import FeedbackOptimizerConfig as _FeedbackOptimizerConfig
-from .dtp import ForwardOptimizerConfig as _ForwardOptimizerConfig
 from .utils import make_stacked_feedback_training_figure
 
 logger = get_logger(__name__)
-
-
-@dataclass
-class ForwardOptimizerConfig(_ForwardOptimizerConfig):
-    # Type of Optimizer to use.
-    type: str = choice(*OptimizerConfig.available_optimizers.keys(), default="adam")
-    # NOTE: We currently fix the type of optimizer, but we could also tune that choice:
-    # type: str = categorical(
-    #     *OptimizerConfig.available_optimizers.keys(), default="sgd", strict=True  # type: ignore
-    # )
-
-    # Learning rate of the optimizer.
-    lr: float = log_uniform(1e-6, 1e-1, default=4e-3)
-
-    # Weight decay coefficient.
-    weight_decay: Optional[float] = log_uniform(1e-9, 1e-3, default=1e-4)
-
-
-@dataclass
-class FeedbackOptimizerConfig(_FeedbackOptimizerConfig):
-    # Type of Optimizer to use.
-    type: str = choice(*OptimizerConfig.available_optimizers.keys(), default="adam")
-    # NOTE: We currently fix the type of optimizer, but we could also tune that choice:
-    # type: str = categorical(
-    #     *OptimizerConfig.available_optimizers.keys(), default="sgd", strict=True  # type: ignore
-    # )
-
-    # Learning rate of the optimizer.
-    lr: float = log_uniform(1e-6, 1e-1, default=4e-3)
-
-    # Weight decay coefficient.
-    weight_decay: Optional[float] = log_uniform(1e-9, 1e-3, default=1e-4)
 
 
 class ParallelDTP(DTP):
@@ -77,49 +43,13 @@ class ParallelDTP(DTP):
     experiments exactly.
     """
 
-    @dataclass
-    class HParams(DTP.HParams):
-        """HParams of the Parallel model."""
-
-        # Arguments to be passed to the LR scheduler.
-        lr_scheduler: Union[StepLRConfig, CosineAnnealingLRConfig] = subparsers(
-            {"step": StepLRConfig, "cosine": CosineAnnealingLRConfig,},
-            default_factory=CosineAnnealingLRConfig,
-        )
-        # Use of a learning rate scheduler for the optimizer of the forward weights.
-        use_scheduler: bool = False
-
-        # Number of training steps for the feedback weights per batch.
-        # In the case of this parallel model, this parameter can't be changed and is fixed to 1.
-        feedback_training_iterations: List[int] = list_field(default_factory=[1].copy, cmd=False)
-
-        # Number of noise samples to use to get the feedback loss in a single iteration.
-        # NOTE: The loss used for each update is the average of these losses.
-        feedback_samples_per_iteration: int = uniform(1, 20, default=10)
-
-        # Hyper-parameters for the "backward" optimizer
-        b_optim: FeedbackOptimizerConfig = FeedbackOptimizerConfig(
-            type="adam",
-            lr=3e-4,
-        )
-        # The scale of the gaussian random variable in the feedback loss calculation.
-        noise: List[float] = uniform(  # type: ignore
-            0.001, 0.5, default_factory=[0.4, 0.4, 0.2, 0.2, 0.08].copy, shape=5
-        )
-        # Hyper-parameters for the forward optimizer
-        f_optim: ForwardOptimizerConfig = ForwardOptimizerConfig(
-            type="adam", lr=3e-4, weight_decay=1e-4,
-        )
-        # nudging parameter: Used when calculating the first target.
-        beta: float = uniform(0.01, 1.0, default=0.7)
-
     def __init__(
         self,
         datamodule: LightningDataModule,
         network: Network,
-        hparams: "ParallelDTP.HParams",
-        config: Config,
-        network_hparams: Network.HParams = None,
+        hparams: DictConfig,
+        config: DictConfig,
+        network_hparams: DictConfig,
     ):
         super().__init__(
             datamodule=datamodule,
@@ -307,23 +237,21 @@ class ParallelDTP(DTP):
 
     def configure_optimizers(self):
         # Feedback optimizer:
-        feedback_optimizer = self.hp.b_optim.make_optimizer(
-            self.backward_net, lrs=self.feedback_lrs
-        )
+        feedback_optimizer = instantiate(self.hp.b_optim, params=self.backward_net.parameters())
         feedback_optim_config = {"optimizer": feedback_optimizer}
 
         # Forward optimizer:
-        forward_optimizer = self.hp.f_optim.make_optimizer(self.forward_net)
-        forward_optim_config: Dict[str, Any] = {
-            "optimizer": forward_optimizer,
-        }
+        forward_optimizer = instantiate(self.hp.f_optim, params=self.forward_net.parameters())
+        forward_optim_config = {"optimizer": forward_optimizer}
         if self.hp.use_scheduler:
             # Using the same LR scheduler as the original code:
-            lr_scheduler = self.hp.lr_scheduler.make_scheduler(forward_optimizer)
+            lr_scheduler = instantiate(
+                self.config.scheduler.lr_scheduler, optimizer=forward_optimizer
+            )
             forward_optim_config["lr_scheduler"] = {
                 "scheduler": lr_scheduler,
-                "interval": self.hp.lr_scheduler.interval,
-                "frequency": self.hp.lr_scheduler.frequency,
+                "interval": self.config.scheduler.interval,
+                "frequency": self.config.scheduler.frequency,
             }
         return [feedback_optim_config, forward_optim_config]
 

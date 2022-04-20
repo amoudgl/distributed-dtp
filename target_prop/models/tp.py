@@ -2,12 +2,10 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import List, Union
 
+from omegaconf import DictConfig
 from pytorch_lightning import LightningDataModule
 from simple_parsing.helpers import list_field
 from simple_parsing.helpers.hparams import log_uniform, uniform
-from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
-from target_prop.config import Config
-from target_prop.optimizer_config import OptimizerConfig
 from torch import Tensor, nn
 
 from .vanilla_dtp import VanillaDTP
@@ -18,24 +16,15 @@ logger = getLogger(__name__)
 class TargetProp(VanillaDTP):
     """Target Propagation (TP)."""
 
-    @dataclass
-    class HParams(VanillaDTP.HParams):
-        """Hyper-Parameters of the model.
-
-        This model inherits the same hyper-parameters and hyper-parameter priors as Vanilla DTP.
-        TODO: The hyper-parameters for this model haven't been tuned yet.
-        """
-
     def __init__(
         self,
         datamodule: LightningDataModule,
         network: nn.Sequential,
-        hparams: "TargetProp.HParams",
-        config: Config,
-        network_hparams: HyperParameters,
+        hparams: DictConfig,
+        config: DictConfig,
+        network_hparams: DictConfig,
     ):
         super().__init__(datamodule, network, hparams, config, network_hparams)
-        self.hp: TargetProp.HParams
 
     def compute_target(self, i: int, G: nn.Module, hs: List[Tensor], prev_target: Tensor) -> Tensor:
         """Compute the target of the previous forward layer. given ,

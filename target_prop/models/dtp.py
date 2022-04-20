@@ -63,8 +63,8 @@ class DTP(LightningModule):
         network_hparams: DictConfig,
     ):
         super().__init__()
-        self.hp: DTP.HParams = hparams
-        self.net_hp = network_hparams or network.hparams
+        self.hp: DictConfig = hparams
+        self.net_hp: DictConfig = network_hparams
         self.config = full_config
         if self.config.seed is not None:
             # NOTE: This is currently being done twice: Once in main_pl and once again here.
