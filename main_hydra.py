@@ -23,9 +23,9 @@ def main(cfg: DictConfig) -> None:
                                          n_classes=datamodule.num_classes)
 
     # create model
-    # note: _recursive_ is set to False below to avoid creating schedulers
-    # and optimizers since they are created internally in configure_optimizers()
-    # method of lightning module.
+    # note: _recursive_ is set to False below to avoid creating optimizers
+    # since they are created internally in configure_optimizers() method
+    # of lightning module.
     model = instantiate(cfg.model,
                         _recursive_=False,
                         datamodule=datamodule,
