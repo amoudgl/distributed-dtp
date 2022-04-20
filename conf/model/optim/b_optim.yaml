@@ -1,8 +1,0 @@
-# @package model.hparams
-b_optim:
-  _target_: torch.optim.SGD
-  # specify learning rate for each layer
-  # list order: input to output layer
-  lr: [1e-4, 3e-5, 8e-3, 8e-3, 0.18]
-  weight_decay: 0
-  momentum: 0.9
