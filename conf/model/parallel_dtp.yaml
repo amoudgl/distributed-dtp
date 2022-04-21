@@ -1,0 +1,25 @@
+# CIFAR-10 defaults
+# checkout README or conf/reproduce directory for good defaults for other dataset + model configurations
+_target_: target_prop.models.ParallelDTP
+hparams:
+  use_scheduler: False
+  feedback_training_iterations: [20, 30, 35, 55, 20]
+  noise: [0.4, 0.4, 0.2, 0.2, 0.08]
+  max_epochs: 90
+  beta: 0.7
+  feedback_samples_per_iteration: 1
+  early_stopping_patience: 0
+  init_symetric_weights: False
+  plot_every: 10000
+
+  f_optim:
+    _target_: torch.optim.Adam
+    lr: 3e-4
+    weight_decay: 1e-4
+
+  b_optim:
+    _target_: torch.optim.Adam
+    # specify learning rate for each layer
+    # list order: input to output layer
+    lr: 3e-4
+    weight_decay: 0
