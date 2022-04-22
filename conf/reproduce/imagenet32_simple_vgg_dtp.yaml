@@ -44,33 +44,26 @@ model:
   hparams:
     f_optim:
       _target_: torch.optim.SGD
-      lr: 0.08
+      lr: 0.01
       weight_decay: 0.0001
       momentum: 0.9
     b_optim:
       _target_: torch.optim.SGD
       lr:
       - 0.0001
-      - 3.0e-05
+      - 3.5e-04
       - 0.008
       - 0.008
       - 0.18
       weight_decay: 0
       momentum: 0.9
-    lr_scheduler:
-      scheduler:
-        _target_: torch.optim.lr_scheduler.CosineAnnealingLR
-        T_max: 85
-        eta_min: 1.0e-05
-      interval: epoch
-      frequency: 1
     use_scheduler: true
     feedback_training_iterations:
-    - 20
-    - 30
+    - 25
     - 35
-    - 55
-    - 20
+    - 40
+    - 60
+    - 25
     noise:
     - 0.4
     - 0.4
@@ -84,6 +77,15 @@ model:
     init_symetric_weights: false
     plot_every: 10000
   _target_: target_prop.models.DTP
+
+################# SCHEDULER ####################
+scheduler:
+  lr_scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    T_max: 85
+    eta_min: 1.0e-05
+  interval: epoch
+  frequency: 1
 
 ################# NETWORK ####################
 network:
