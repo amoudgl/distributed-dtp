@@ -10,7 +10,7 @@ pip install -e .
 
 To train with DTP on CIFAR-10, do:
 ```
-python main_hydra.py \
+python main.py \
 model=dtp \
 network=simple_vgg \
 datamodule=cifar10 \
@@ -20,12 +20,12 @@ scheduler=cosine
 
 To reproduce experiment results from a complete config, just do:
 ```
-python main_hydra.py reproduce=imagenet32_simple_vgg_dtp
+python main.py reproduce=imagenet32_simple_vgg_dtp
 ```
 
 Following example demonstrates overriding config through command line:
 ```
-python main_hydra.py \
+python main.py \
 model=dtp \
 network=simple_vgg \
 datamodule=imagenet32 \
