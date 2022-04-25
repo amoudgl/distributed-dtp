@@ -360,13 +360,12 @@ class DTP(LightningModule):
                     metrics = compute_dist_angle(F_i, G_i)
                     if isinstance(metrics, dict):
                         # NOTE: When a block has more than one trainable layer, we only report the
-                        # first non-zero value for now.
+                        # first value for now.
                         # TODO: Fix this later.
-                        distance, angle = 0, 0
-                        for k, v in metrics.items():
-                            if v != (0, 0):
-                                distance, angle = v
-                                break
+                        while isinstance(metrics, dict):
+                            first_key = list(metrics.keys())[0]
+                            metrics = metrics[first_key]
+                        distance, angle = metrics
                     else:
                         distance, angle = metrics
 
@@ -394,7 +393,7 @@ class DTP(LightningModule):
                 iteration_angles.append(angle)
                 iteration_distances.append(distance)
 
-                # IDEA: If we log these values once per iteration, will the plots look nice?
+                # IDEA: If weg log these values once per iteration, will the plots look nice?
                 # self.log(f"{self.phase}/B_loss[{layer_index}]", loss)
                 # self.log(f"{self.phase}/B_angle[{layer_index}]", angle)
                 # self.log(f"{self.phase}/B_distance[{layer_index}]", distance)
