@@ -33,14 +33,14 @@ class BaselineModel(LightningModule, ABC):
         datamodule: LightningDataModule,
         network: nn.Sequential,
         hparams: DictConfig,
-        config: DictConfig,
+        full_config: DictConfig,
         network_hparams: DictConfig,
     ):
         super().__init__()
         # NOTE: Can't exactly set the `hparams` attribute because it's a special property of PL.
         self.hp: BaselineModel.HParams = hparams
         self.net_hp = network_hparams
-        self.config = config
+        self.config = full_config
         if self.config.seed is not None:
             seed_everything(seed=self.config.seed, workers=True)
 
@@ -132,7 +132,7 @@ class BaselineModel(LightningModule, ABC):
     def configure_optimizers(self) -> Dict:
         """Creates the optimizers and the LR scheduler (if needed)."""
         # Create the optimizers using the config class for it in `self.hp`.
-        optimizer = instantiate(self.hp.b_optim, params=self.forward_net.parameters())
+        optimizer = instantiate(self.hp.f_optim, params=self.forward_net.parameters())
         optim_config: Dict[str, Any] = {"optimizer": optimizer}
 
         if self.hp.use_scheduler:
