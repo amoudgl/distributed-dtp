@@ -1,0 +1,92 @@
+# @package _global_
+################# META ####################    
+seed: 123
+debug: false
+data_dir: /home/amoudgl/Projects/data
+
+################# DATA MODULE ####################
+datamodule:
+  _target_: target_prop.datasets.ImageNet32DataModule
+  batch_size: 256
+  num_workers: 4
+  pin_memory: true
+  shuffle: true
+  train_transforms:
+    _target_: torchvision.transforms.Compose
+    transforms:
+    - _target_: torchvision.transforms.RandomHorizontalFlip
+      p: 0.5
+    - _target_: torchvision.transforms.RandomCrop
+      size: 32
+      padding: 4
+      padding_mode: edge
+    - _target_: torchvision.transforms.ToTensor
+    - _target_: target_prop.datasets.imagenet32_normalization
+  val_transforms:
+    _target_: torchvision.transforms.Compose
+    transforms:
+    - _target_: torchvision.transforms.RandomHorizontalFlip
+      p: 0.5
+    - _target_: torchvision.transforms.RandomCrop
+      size: 32
+      padding: 4
+      padding_mode: edge
+    - _target_: torchvision.transforms.ToTensor
+    - _target_: target_prop.datasets.imagenet32_normalization
+  test_transforms:
+    _target_: torchvision.transforms.Compose
+    transforms:
+    - _target_: torchvision.transforms.ToTensor
+    - _target_: target_prop.datasets.imagenet32_normalization
+
+################# MODEL ####################
+model:
+  _target_: target_prop.models.BaselineModel
+  hparams:
+    use_scheduler: True
+    max_epochs: 90
+    early_stopping_patience: 0
+
+    f_optim:
+      _target_: torch.optim.SGD
+      lr: 0.01
+      weight_decay: 1e-4
+      momentum: 0.9
+
+################# SCHEDULER ####################
+scheduler:
+  lr_scheduler:
+    _target_: torch.optim.lr_scheduler.StepLR
+    step_size: 30
+    gamma: 0.1
+  interval: "epoch"
+  frequency: 1
+
+################# NETWORK ####################
+network:
+  _target_: target_prop.networks.SimpleVGG
+  hparams:
+    channels:
+    - 128
+    - 128
+    - 256
+    - 256
+    - 512
+    activation:
+      _target_: torch.nn.ELU
+
+################# TRAINER ####################
+trainer:
+  _target_: pytorch_lightning.Trainer
+  max_epochs: 90
+  gpus: 1
+  accelerator: null
+  reload_dataloaders_every_epoch: false
+  detect_anomaly: true
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
+  enable_checkpointing: true
+  profiler: null
+  logger:
+    _target_: pytorch_lightning.loggers.WandbLogger
