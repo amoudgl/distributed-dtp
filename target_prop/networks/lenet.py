@@ -14,14 +14,19 @@ class LeNet(nn.Sequential):
     class HParams(HyperParameters):
         channels: List[int] = list_field(32, 64)
         activation: Type[nn.Module] = choice(
-            {"relu": nn.ReLU, "elu": nn.ELU,}, default=nn.ELU,
+            {
+                "relu": nn.ReLU,
+                "elu": nn.ELU,
+            },
+            default=nn.ELU,
         )
 
     def __init__(self, in_channels: int, n_classes: int, hparams: "LeNet.HParams" = None):
         hparams = hparams or self.HParams()
         layers: OrderedDict[str, nn.Module] = OrderedDict()
         activation: Type[nn.Module] = hparams.activation
-        channels = [in_channels] + hparams.channels
+        # hparams.channels could be ListCfg object, so convert to list to be safe
+        channels = [in_channels] + list(hparams.channels)
 
         # NOTE: Can use [0:] and [1:] below because zip will stop when the shortest
         # iterable is exhausted. This gives us the right number of blocks.
@@ -36,7 +41,7 @@ class LeNet(nn.Sequential):
                         stride=1,
                         padding=2,  # in Meuleman code padding=2
                     ),
-                    rho=activation(),
+                    rho=activation,
                     # NOTE: Even though `return_indices` is `False` here, we're actually passing
                     # the indices to the backward net for this layer through a "magic bridge".
                     # We use `return_indices=False` here just so the layer doesn't also return
@@ -51,7 +56,7 @@ class LeNet(nn.Sequential):
             OrderedDict(
                 reshape=Reshape(target_shape=(-1,)),
                 linear1=nn.LazyLinear(out_features=512, bias=True),
-                rho=activation(),
+                rho=activation,
             )
         )
         layers["fc2"] = nn.Sequential(

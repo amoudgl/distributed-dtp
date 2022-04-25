@@ -1,0 +1,5 @@
+_target_: target_prop.networks.LeNet
+hparams:
+  channels: [32, 64]
+  activation:
+    _target_: torch.nn.ELU
