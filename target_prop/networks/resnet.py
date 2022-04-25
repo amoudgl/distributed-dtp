@@ -4,6 +4,7 @@ from typing import List, Tuple, Type
 
 import torch.nn as nn
 import torch.nn.functional as F
+from omegaconf import DictConfig
 from simple_parsing.helpers import choice, list_field
 from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
 from target_prop.backward_layers import invert
@@ -149,15 +150,8 @@ class ResNet(nn.Sequential):
     which is better suited for larger image sizes like 224x224.
     """
 
-    @dataclass
-    class HParams(HyperParameters):
-        block: Type[BasicBlock] = choice({"basic": BasicBlock}, default=BasicBlock)
-        use_batchnorm: bool = False
-        num_blocks: List[int] = list_field(2, 2, 2, 2)
-
-    def __init__(self, in_channels: int, n_classes: int, hparams: "ResNet.HParams" = None):
+    def __init__(self, hparams: DictConfig, in_channels: int, n_classes: int):
         # Catch hparams
-        hparams = hparams or self.HParams()
         use_batchnorm = hparams.use_batchnorm
         block_type = hparams.block
         num_blocks = hparams.num_blocks
@@ -216,25 +210,3 @@ class ResNet(nn.Sequential):
         )
         super().__init__(layers)
         self.hparams = hparams
-
-
-class ResNet18(ResNet):
-    @dataclass
-    class HParams(ResNet.HParams):
-        block: Type[nn.Module] = choice({"basic": BasicBlock}, default=BasicBlock)
-        use_batchnorm: bool = False
-        num_blocks: List[int] = list_field(2, 2, 2, 2)
-
-
-class ResNet34(ResNet):
-    @dataclass
-    class HParams(ResNet.HParams):
-
-        block: Type[nn.Module] = choice({"basic": BasicBlock}, default=BasicBlock)
-        use_batchnorm: bool = False
-        num_blocks: List[int] = list_field(3, 4, 6, 3)
-
-
-resnet = ResNet
-ResNet18Hparams = ResNet18.HParams
-ResNet34Hparams = ResNet34.HParams

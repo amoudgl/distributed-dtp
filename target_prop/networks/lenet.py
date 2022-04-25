@@ -2,6 +2,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
 
+from omegaconf import DictConfig
 from simple_parsing.helpers import choice, list_field
 from simple_parsing.helpers.hparams.hparam import categorical, log_uniform, uniform
 from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
@@ -10,19 +11,7 @@ from torch import nn
 
 
 class LeNet(nn.Sequential):
-    @dataclass
-    class HParams(HyperParameters):
-        channels: List[int] = list_field(32, 64)
-        activation: Type[nn.Module] = choice(
-            {
-                "relu": nn.ReLU,
-                "elu": nn.ELU,
-            },
-            default=nn.ELU,
-        )
-
-    def __init__(self, in_channels: int, n_classes: int, hparams: "LeNet.HParams" = None):
-        hparams = hparams or self.HParams()
+    def __init__(self, hparams: DictConfig, in_channels: int, n_classes: int):
         layers: OrderedDict[str, nn.Module] = OrderedDict()
         activation: Type[nn.Module] = hparams.activation
         # hparams.channels could be ListCfg object, so convert to list to be safe
@@ -65,7 +54,3 @@ class LeNet(nn.Sequential):
 
         super().__init__(layers)
         self.hparams = hparams
-
-
-lenet = LeNet
-LeNetHparams = LeNet.HParams

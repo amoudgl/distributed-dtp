@@ -1,6 +1,4 @@
-from abc import ABC
-from dataclasses import dataclass
-from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
+from omegaconf import DictConfig
 
 try:
     from typing import Protocol
@@ -9,9 +7,5 @@ except ImportError:
 
 
 class Network(Protocol):
-    @dataclass
-    class HParams(HyperParameters):
-        pass
-
-    def __init__(self, in_channels: int, n_classes: int, hparams: HParams = None):
+    def __init__(self, hparams: DictConfig, in_channels: int, n_classes: int):
         ...
