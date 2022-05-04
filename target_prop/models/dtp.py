@@ -1,35 +1,25 @@
-import dataclasses
 import logging
 import warnings
-from collections import OrderedDict
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
 
-import numpy as np
 import torch
 import wandb
+from hydra.utils import instantiate
+from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.utilities.seed import seed_everything
-from simple_parsing.helpers import choice, list_field, subparsers
-from simple_parsing.helpers.hparams.hparam import log_uniform, uniform
-from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
 from target_prop._weight_operations import init_symetric_weights
 from target_prop.backward_layers import invert, mark_as_invertible
 from target_prop.callbacks import CompareToBackpropCallback
-from target_prop.config import Config
 from target_prop.feedback_loss import get_feedback_loss
-from target_prop.layers import MaxPool2d, Reshape, forward_all
+from target_prop.layers import forward_all
 from target_prop.metrics import compute_dist_angle
 from target_prop.networks import Network
-from target_prop.networks.simple_vgg import SimpleVGG
-from target_prop.optimizer_config import OptimizerConfig
-from target_prop.scheduler_config import CosineAnnealingLRConfig, StepLRConfig
 from target_prop.utils import is_trainable
 from torch import Tensor, nn
 from torch.nn import functional as F
-from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.optim.optimizer import Optimizer
 from torchmetrics.classification.accuracy import Accuracy
 
@@ -37,63 +27,6 @@ from .utils import make_stacked_feedback_training_figure
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
-
-
-@dataclass
-class ForwardOptimizerConfig(OptimizerConfig):
-    """Configuration of the optimizer for the forward weights.
-
-    NOTE: Creating a distinct class for this is currently the only way to specify different priors
-    for the forward optimizer and the feedback optimizer.
-    """
-
-    # Type of Optimizer to use.
-    type: str = choice(*OptimizerConfig.available_optimizers.keys(), default="sgd")
-    # NOTE: We currently fix the type of optimizer, but we could also tune that choice:
-    # type: str = categorical(
-    #     *OptimizerConfig.available_optimizers.keys(), default="sgd", strict=True  # type: ignore
-    # )
-
-    # Learning rate of the optimizer.
-    lr: float = log_uniform(1e-4, 1e-1, default=0.08)
-
-    # Weight decay coefficient.
-    weight_decay: Optional[float] = 1e-4
-
-    # Momentum term to pass to SGD.
-    # NOTE: This value is only used with SGD, not with Adam.
-    momentum: float = 0.9
-
-
-@dataclass
-class FeedbackOptimizerConfig(OptimizerConfig):
-    """Configuration of the optimizer for the forward weights.
-
-    NOTE: Creating a distinct class for this is currently the only way to specify different priors
-    for the forward optimizer and the feedback optimizer.
-    """
-
-    # Type of Optimizer to use.
-    type: str = choice(*OptimizerConfig.available_optimizers.keys(), default="sgd")
-    # type: str = categorical(
-    #     *OptimizerConfig.available_optimizers.keys(), default="sgd", strict=True  # type: ignore
-    # )
-
-    # Learning rate of the optimizer.
-    lr: List[float] = log_uniform(
-        1e-4, 1e-1, default_factory=[1e-4, 3.5e-4, 8e-3, 8e-3, 0.18].copy, shape=5
-    )
-
-    # Learning rate of the optimizer.
-    # NOTE: IF we want to tune a single learning rate:
-    # lr: float = log_uniform(1e-4, 1e-1, default=1e-3)
-
-    # Weight decay coefficient.
-    weight_decay: Optional[float] = None
-
-    # Momentum term to pass to SGD.
-    # NOTE: This value is only used with SGD, not with Adam.
-    momentum: float = 0.9
 
 
 class DTP(LightningModule):
@@ -121,108 +54,18 @@ class DTP(LightningModule):
     anything here or pass any custom values from the command-line.
     """
 
-    @dataclass
-    class HParams(HyperParameters):
-        """Hyper-Parameters of the model.
-
-        The number of noise samples to use per iteration is set by `feedback_samples_per_iteration`.
-
-        NOTE: By increasing the value of `feedback_samples_per_iteration` and setting the value of
-        `feedback_training_iterations` to 1 for all layers, we could get something close to a
-        "parallel" version of DTP, however the feedback layers still need to be updated in sequence.
-        """
-
-        # Arguments to be passed to the LR scheduler.
-        lr_scheduler: Union[StepLRConfig, CosineAnnealingLRConfig] = subparsers(
-            {
-                "step": StepLRConfig,
-                "cosine": CosineAnnealingLRConfig,
-            },
-            default_factory=CosineAnnealingLRConfig,
-        )
-        # Use of a learning rate scheduler for the forward weights.
-        use_scheduler: bool = True
-
-        # batch size
-        batch_size: int = log_uniform(16, 512, default=128, base=2, discrete=True)
-
-        # Number of training steps for the feedback weights per batch. Can be a list of
-        # integers, where each value represents the number of iterations for that layer.
-        # NOTE: Not tuning these values:
-        feedback_training_iterations: List[int] = list_field(20, 30, 35, 55, 20)
-        # NOTE: tuning a single value for all layers:
-        # feedback_training_iterations: int = uniform(1, 60, default=20, discrete=True)
-        # NOTE: IF we want to tune each value independantly:
-        # feedback_training_iterations: List[int] = uniform(
-        #     1, 60, shape=5, default_factory=[20, 30, 35, 55, 20].copy, discrete=True
-        # )
-
-        # Max number of training epochs in total.
-        max_epochs: int = 90
-
-        # Hyper-parameters for the optimizer of the feedback weights (backward net).
-        b_optim: FeedbackOptimizerConfig = FeedbackOptimizerConfig(
-            type="sgd", lr=[1e-4, 3.5e-4, 8e-3, 8e-3, 0.18], momentum=0.9
-        )
-
-        # The scale of the gaussian random variable in the feedback loss calculation.
-        # NOTE: Not tuning this parameter:
-        noise: List[float] = list_field(0.4, 0.4, 0.2, 0.2, 0.08)
-        # NOTE: tuning a value per layer:
-        # noise: List[float] = uniform(  # type: ignore
-        #     0.001, 0.5, default_factory=[0.4, 0.4, 0.2, 0.2, 0.08].copy, shape=5
-        # )
-        # NOTE: tuning a single value for all layers:
-        # noise: float = uniform(0.001, 0.5, default=0.2)
-
-        # Hyper-parameters for the forward optimizer
-        f_optim: ForwardOptimizerConfig = ForwardOptimizerConfig(
-            type="sgd", lr=0.08, weight_decay=1e-4, momentum=0.9
-        )
-        # nudging parameter: Used when calculating the first target.
-        # beta: float = 0.7  # NOTE: not tuning this value
-        beta: float = uniform(0.01, 1.0, default=0.7)  # Adding it to HPO space
-
-        # Number of noise samples to use to get the feedback loss in a single iteration.
-        # NOTE: The loss used for each update is the average of these losses.
-        feedback_samples_per_iteration: int = 1  # Not tuning the value
-        # feedback_samples_per_iteration: int = uniform(1, 20, default=1)  # tuning the value
-
-        # Max number of epochs to train for without an improvement to the validation
-        # accuracy before the training is stopped. When 0, no early stopping is used.
-        early_stopping_patience: int = 0
-
-        # Sets symmetric weight initialization. Useful for debugging.
-        init_symetric_weights: bool = False
-
-        # TODO: Add a Callback class to compute and plot jacobians, if that's interesting.
-        # jacobian: bool = False  # compute jacobians
-
-        # Step interval for creating and logging plots.
-        plot_every: int = 10000
-
-        def __post_init__(self):
-            super().__post_init__()
-            for field in dataclasses.fields(self):
-                value = getattr(self, field.name)
-                from simple_parsing.utils import is_list
-
-                if is_list(field.type) and isinstance(value, np.ndarray):
-                    # Convert to a list.
-                    setattr(self, field.name, value.tolist())
-
     def __init__(
         self,
         datamodule: LightningDataModule,
         network: Network,
-        hparams: "DTP.HParams",
-        config: Config,
-        network_hparams: HyperParameters = None,
+        hparams: DictConfig,
+        full_config: DictConfig,
+        network_hparams: DictConfig,
     ):
         super().__init__()
-        self.hp: DTP.HParams = hparams
-        self.net_hp = network_hparams or network.hparams
-        self.config = config
+        self.hp: DictConfig = hparams
+        self.net_hp: DictConfig = network_hparams
+        self.config = full_config
         if self.config.seed is not None:
             # NOTE: This is currently being done twice: Once in main_pl and once again here.
             seed_everything(seed=self.config.seed, workers=True)
@@ -302,10 +145,10 @@ class DTP(LightningModule):
         self.top5_accuracy = Accuracy(top_k=5)
         self.save_hyperparameters(
             {
-                "hp": self.hp.to_dict(),
-                "config": self.config.to_dict(),
+                "hp": OmegaConf.to_container(self.hp),
+                "config": OmegaConf.to_container(self.config),
                 "model_type": type(self).__name__,
-                "net_hp": self.net_hp.to_dict(),
+                "net_hp": OmegaConf.to_container(self.net_hp),
                 "net_type": type(self.forward_net).__name__,
             }
         )
@@ -318,8 +161,6 @@ class DTP(LightningModule):
         # per batch.
         self.automatic_optimization = False
         self.criterion = nn.CrossEntropyLoss(reduction="none")
-        print("Hyper-Parameters:")
-        print(self.hp.dumps_json(indent="\t"))
         # TODO: Could use a list of metrics from torchmetrics instead of just accuracy:
         # self.supervised_metrics: List[Metrics]
         self._feedback_optimizers: Optional[List[Optional[Optimizer]]] = None
@@ -519,13 +360,12 @@ class DTP(LightningModule):
                     metrics = compute_dist_angle(F_i, G_i)
                     if isinstance(metrics, dict):
                         # NOTE: When a block has more than one trainable layer, we only report the
-                        # first non-zero value for now.
+                        # first value for now.
                         # TODO: Fix this later.
-                        distance, angle = 0, 0
-                        for k, v in metrics.items():
-                            if v != (0, 0):
-                                distance, angle = v
-                                break
+                        while isinstance(metrics, dict):
+                            first_key = list(metrics.keys())[0]
+                            metrics = metrics[first_key]
+                        distance, angle = metrics
                     else:
                         distance, angle = metrics
 
@@ -553,7 +393,7 @@ class DTP(LightningModule):
                 iteration_angles.append(angle)
                 iteration_distances.append(distance)
 
-                # IDEA: If we log these values once per iteration, will the plots look nice?
+                # IDEA: If weg log these values once per iteration, will the plots look nice?
                 # self.log(f"{self.phase}/B_loss[{layer_index}]", loss)
                 # self.log(f"{self.phase}/B_angle[{layer_index}]", angle)
                 # self.log(f"{self.phase}/B_distance[{layer_index}]", distance)
@@ -800,29 +640,36 @@ class DTP(LightningModule):
                 assert lr == 0.0, (i, lr, self.feedback_lrs, type(feedback_layer))
             else:
                 assert lr != 0.0
-                feedback_layer_optimizer = self.hp.b_optim.make_optimizer(feedback_layer, lrs=[lr])
+                feedback_layer_optimizer = instantiate(
+                    self.hp.b_optim, lr=lr, params=feedback_layer.parameters()
+                )
+                # feedback_layer_optimizer = self.hp.b_optim.make_optimizer(feedback_layer, lrs=[lr])
                 feedback_layer_optim_config = {"optimizer": feedback_layer_optimizer}
                 configs.append(feedback_layer_optim_config)
 
         ## Forward optimizer:
-        forward_optimizer = self.hp.f_optim.make_optimizer(self.forward_net)
+        # forward_optimizer = self.hp.f_optim.make_optimizer(self.forward_net)
+        forward_optimizer = instantiate(self.hp.f_optim, params=self.forward_net.parameters())
         forward_optim_config: Dict[str, Any] = {
             "optimizer": forward_optimizer,
         }
         if self.hp.use_scheduler:
             # Using the same LR scheduler as the original code:
-            lr_scheduler = self.hp.lr_scheduler.make_scheduler(forward_optimizer)
+            # lr_scheduler = self.hp.lr_scheduler.make_scheduler(forward_optimizer)
+            lr_scheduler = instantiate(
+                self.config.scheduler.lr_scheduler, optimizer=forward_optimizer
+            )
             lr_scheduler_config = {
                 # REQUIRED: The scheduler instance
                 "scheduler": lr_scheduler,
                 # The unit of the scheduler's step size, could also be 'step'.
                 # 'epoch' updates the scheduler on epoch end whereas 'step'
                 # updates it after a optimizer update.
-                "interval": self.hp.lr_scheduler.interval,
+                "interval": self.config.scheduler.interval,
                 # How many epochs/steps should pass between calls to
                 # `scheduler.step()`. 1 corresponds to updating the learning
                 # rate after every epoch/step.
-                "frequency": self.hp.lr_scheduler.frequency,
+                "frequency": self.config.scheduler.frequency,
             }
             forward_optim_config["lr_scheduler"] = lr_scheduler_config
         configs.append(forward_optim_config)

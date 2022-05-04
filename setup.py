@@ -1,4 +1,5 @@
 import sys
+
 import setuptools
 
 with open("README.md", "r") as fh:
@@ -10,12 +11,12 @@ print(sys.version_info)
 setuptools.setup(
     name="target_prop",
     version="0.0.1",
-    author="Fabrice Normandin",  # TODO: Replace with Maxence's full name
-    author_email="fabrice.normandin@gmail.com",  # TODO: Replace with Maxence's email
-    description="Revisiting Differential Target Propagation",
+    author="Abhinav Moudgil",
+    author_email="abhinavmoudgil95@gmail.com",
+    description="Distributed DTP",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/ernoult/projet_Yoshua_Blake",
+    url="https://github.com/amoudgl/distributed-dtp",
     packages=packages,
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -24,14 +25,13 @@ setuptools.setup(
     ],
     python_requires=">=3.6",
     install_requires=[
-        "simple-parsing",
         "torch",
         "pytorch-lightning",
         "pytorch-lightning-bolts",
         "tqdm",
         "wandb",
         "plotly",
-        "kaleido",
         "torchmetrics",
+        "hydra",
     ],
 )

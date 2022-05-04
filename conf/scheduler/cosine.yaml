@@ -1,0 +1,8 @@
+lr_scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  T_max: 85
+  eta_min: 1e-5
+
+# following attributes are used by lightning
+interval: "epoch"
+frequency: 1

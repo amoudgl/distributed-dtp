@@ -1,0 +1,8 @@
+lr_scheduler:
+  _target_: torch.optim.lr_scheduler.StepLR
+  step_size: 30
+  gamma: 0.1
+
+# following attributes are used by lightning
+interval: "epoch"
+frequency: 1

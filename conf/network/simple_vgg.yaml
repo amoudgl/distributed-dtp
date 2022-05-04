@@ -1,0 +1,5 @@
+_target_: target_prop.networks.SimpleVGG
+hparams:
+  channels: [128, 128, 256, 256, 512]
+  activation:
+    _target_: torch.nn.ELU

@@ -6,50 +6,38 @@ The following code runs on Python > 3.6 with Pytorch 1.7.0.
 pip install -e .
 ```
 
-## Running the code
-To run the pytorch-lightning re-implementation of DTP on CIFAR-10, use the following command:
-```console
-python main_pl.py run dtp simple_vgg
+## Running the code (Hydra)
+
+To train with DTP on CIFAR-10, do:
+```
+python main.py \
+model=dtp \
+network=simple_vgg \
+datamodule=cifar10 \
+trainer=default \
+scheduler=cosine
 ```
 
-To use the modified version of the above DTP model, with "parallel" feedback weight training on CIFAR-10, use the following command:
-```console
-python main_pl.py run parallel_dtp simple_vgg
+To reproduce experiment results from a complete config, just do:
+```
+python main.py reproduce=imagenet32_simple_vgg_dtp
 ```
 
-### ImageNet
-
-To train with DTP on ImageNet 32x32 dataset, do:
+Following example demonstrates overriding config through command line:
 ```
-python main_pl.py run dtp simple_vgg \
---batch_size 256 \
---num_workers 4 \
---dataset imagenet32 \
---seed 123 \
---f_optim.type sgd \
---f_optim.lr 0.01 \
---feedback_training_iterations 25 35 40 60 25 \
---b_optim.type sgd \
---b_optim.momentum 0.9 \
---b_optim.lr 1e-4 3.5e-4 8e-3 8e-3 0.18 \
---use_scheduler true \
-cosine
+python main.py \
+model=dtp \
+network=simple_vgg \
+datamodule=imagenet32 \
+trainer=default \
+scheduler=cosine \
+seed=123 \
+datamodule.batch_size=256 \
+model.hparams.feedback_training_iterations=[25,35,40,60,25] \
+model.hparams.f_optim.lr=0.01 \
+model.hparams.b_optim.momentum=0.9 \
+model.hparams.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18]
 ```
-
-To train with backprop baseline on ImageNet 32x32 dataset, do:
-```
-python main_pl.py run backprop simple_vgg \
---batch_size 256 \
---num_workers 4 \
---dataset imagenet32 \
---seed 123 \
---type sgd \
---lr 0.01 \
---use_scheduler true \
-step \
---step_size 30
-```
-
 
 ### Legacy Implementation
 To check training on CIFAR-10, type the following command in the terminal:

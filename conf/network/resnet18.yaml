@@ -1,0 +1,7 @@
+_target_: target_prop.networks.ResNet
+hparams:
+  use_batchnorm: False
+  num_blocks: [2, 2, 2, 2]
+  block:
+    _target_: hydra.utils.get_class
+    path: target_prop.networks.resnet.BasicBlock

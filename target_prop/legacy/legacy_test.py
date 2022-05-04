@@ -12,7 +12,6 @@ from simple_parsing.helpers.hparams import log_uniform, uniform
 from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
 from target_prop._weight_operations import init_symetric_weights
 from target_prop.backward_layers import mark_as_invertible
-from target_prop.config import Config
 from target_prop.layers import Reshape, forward_all, invert
 from target_prop.legacy import (
     VGG,
