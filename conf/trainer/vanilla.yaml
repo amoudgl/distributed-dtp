@@ -1,0 +1,5 @@
+_target_: target_prop.trainers.VanillaTrainer
+max_epochs: 90
+gpus: 1
+logger:
+  _target_: pytorch_lightning.loggers.WandbLogger
