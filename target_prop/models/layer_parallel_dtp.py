@@ -188,67 +188,28 @@ class LayerParallelDTP(LightningModule):
         batch: Tuple[Tensor, Tensor],
         batch_idx: int,
     ) -> float:  # type: ignore
-        return self.shared_step(batch, batch_idx=batch_idx, phase="val")
+        # TODO
+        return 0.0
+        # return self.shared_step(batch, batch_idx=batch_idx, phase="val")
 
     def test_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> float:  # type: ignore
-        return self.shared_step(batch, batch_idx=batch_idx, phase="test")
+        # TODO
+        return 0.0
+        # return self.shared_step(batch, batch_idx=batch_idx, phase="test")
 
-    def shared_step(
-        self,
-        batch: Tuple[Tensor, Tensor],
-        batch_idx: int,
-        phase: str,
-    ):
-        """Main step, used by the `[training/valid/test]_step` methods."""
-        x, y = batch
+    def feedback_loss(self, x: Tensor, y: Tensor, rank: int, phase: str) -> Dict[str, Any]:
 
-        # ----------- Optimize the feedback weights -------------
-        # NOTE: feedback_loss here returns a dict for now, since I think that makes things easier to
-        # inspect.
-        feedback_training_outputs: Dict = self.feedback_loss(x, y, phase=phase)
+        # We never train the last layer of the feedback net (G_0).
+        if rank == 0:
+            # Return dummy dictionary for consistent logging
+            return {
+                "loss": torch.tensor(0.0, device=y.device),
+                "avg_loss": torch.tensor(0.0, device=y.device),
+                "layer_losses": [[0.0]],
+                "layer_angles": [[0.0]],
+                "layer_distances": [[0.0]],
+            }
 
-        feedback_loss: Tensor = feedback_training_outputs["loss"]
-        avg_feedback_loss: Tensor = feedback_training_outputs["avg_loss"]
-        if self.trainer is not None:
-            self.log(f"{phase}/B_loss", feedback_loss)
-            self.log(f"{phase}/B_avg_loss", avg_feedback_loss, prog_bar=phase == "train")
-        # This is never a 'live' loss, since we do the optimization steps sequentially
-        # inside `feedback_loss`.
-        assert not feedback_loss.requires_grad
-
-        # ----------- Optimize the forward weights -------------
-        forward_training_outputs: Dict = self.forward_loss(x, y, phase=phase)
-        forward_loss: Tensor = forward_training_outputs["loss"]
-
-        # During training, the forward loss will be a 'live' loss tensor, since we
-        # gather the losses for each layer. Here we perform only one step.
-        assert forward_loss.requires_grad == (phase == "train")
-        # NOTE: If this is getting called from the `ParallelDTP`, then `self.automatic_optimization`
-        # will be `True`, and we let PL do the update.
-        if forward_loss.requires_grad and not self.automatic_optimization:
-            forward_optimizer = self.forward_optimizer
-            forward_optimizer.zero_grad()
-            if self.trainer:
-                self.manual_backward(forward_loss)
-            else:
-                # Unit testing.
-                forward_loss.backward()
-            forward_optimizer.step()
-            self.log(f"F_lr", forward_optimizer.param_groups[0]["lr"])
-            forward_loss = forward_loss.detach()
-
-        last_layer_loss: Tensor = forward_training_outputs["layer_losses"][-1].detach()
-        if self.trainer is not None:
-            self.log(f"{phase}/F_loss", forward_loss)
-            self.log(f"{phase}/Loss", last_layer_loss, prog_bar=phase == "train")
-
-        # Since here we do manual optimization, we just return a float. This tells PL that we've
-        # already performed the optimization steps, if needed.
-        return float(forward_loss + feedback_loss)
-
-    def feedback_loss(self, x: Tensor, y: Tensor, phase: str) -> Dict[str, Any]:
-
-        n_layers = len(self.backward_net)
         # Reverse the backward net, just for ease of readability.
         reversed_backward_net = self.backward_net[::-1]
         reversed_feedback_optimizers = self.feedback_optimizers[::-1]
@@ -273,149 +234,110 @@ class LayerParallelDTP(LightningModule):
         layer_avg_losses: List[List[float]] = []
 
         # Layer-wise autoencoder training begins:
-        # NOTE: Skipping the first layer
-        for layer_index in range(1, n_layers):
-            # Forward layer
-            F_i = self.forward_net[layer_index]
-            # Feedback layer
-            G_i = reversed_backward_net[layer_index]
-            layer_optimizer = reversed_feedback_optimizers[layer_index]
-            assert (layer_optimizer is not None) == (is_trainable(G_i))
+        # In layer-parallel, we only train a specific feedback layer corresponding to rank
+        layer_index = rank
+        # Forward layer
+        F_i = self.forward_net[layer_index]
+        # Feedback layer
+        G_i = reversed_backward_net[layer_index]
+        layer_optimizer = reversed_feedback_optimizers[layer_index]
+        assert (layer_optimizer is not None) == (is_trainable(G_i))
 
-            x_i = ys[layer_index - 1]
-            y_i = ys[layer_index]
+        x_i = ys[layer_index - 1]
+        y_i = ys[layer_index]
 
-            # Number of feedback training iterations to perform for this layer.
-            iterations_i = iterations_per_layer[layer_index]
-            if iterations_i and not self.training:
-                # NOTE: Only perform one iteration per layer when not training.
-                iterations_i = 1
-            # The scale of noise to use for thist layer.
-            noise_scale_i = noise_scale_per_layer[layer_index]
+        # Number of feedback training iterations to perform for this layer.
+        iterations_i = iterations_per_layer[layer_index]
+        if iterations_i and not self.training:
+            # NOTE: Only perform one iteration per layer when not training.
+            iterations_i = 1
+        # The scale of noise to use for thist layer.
+        noise_scale_i = noise_scale_per_layer[layer_index]
 
-            # Collect the distances and angles between the forward and backward weights during this
-            # iteratin.
-            iteration_angles: List[float] = []
-            iteration_distances: List[float] = []
-            iteration_losses: List[Tensor] = []
+        # Collect the distances and angles between the forward and backward weights during this
+        # iteratin.
+        iteration_angles: List[float] = []
+        iteration_distances: List[float] = []
+        iteration_losses: List[Tensor] = []
 
-            # NOTE: When a layer isn't trainable (e.g. layer is a Reshape or nn.ELU), then
-            # iterations_i will be 0, so the for loop below won't be run.
+        # NOTE: When a layer isn't trainable (e.g. layer is a Reshape or nn.ELU), then
+        # iterations_i will be 0, so the for loop below won't be run.
 
-            # Train the current autoencoder:
-            for iteration in range(iterations_i):
-                assert noise_scale_i > 0, (
-                    layer_index,
-                    iterations_i,
-                )
-                # Get the loss (see `feedback_loss.py`)
-                loss = self.layer_feedback_loss(
-                    feedback_layer=G_i,
-                    forward_layer=F_i,
-                    input=x_i,
-                    output=y_i,
-                    noise_scale=noise_scale_i,
-                    noise_samples=self.hp.feedback_samples_per_iteration,
-                )
-
-                # Compute the angle and distance for debugging the training of the
-                # feedback weights:
-                with torch.no_grad():
-                    metrics = compute_dist_angle(F_i, G_i)
-                    if isinstance(metrics, dict):
-                        # NOTE: When a block has more than one trainable layer, we only report the
-                        # first value for now.
-                        # TODO: Fix this later.
-                        while isinstance(metrics, dict):
-                            first_key = list(metrics.keys())[0]
-                            metrics = metrics[first_key]
-                        distance, angle = metrics
-                    else:
-                        distance, angle = metrics
-
-                # perform the optimization step for that layer when training.
-                if self.training and layer_optimizer:
-                    assert isinstance(loss, Tensor) and loss.requires_grad
-                    layer_optimizer.zero_grad()
-                    # self.manual_backward(loss) won't work if self.trainer is None
-                    # self.trainer is None in legacy unit tests
-                    self.manual_backward(loss) if self.trainer is not None else loss.backward()
-                    layer_optimizer.step()
-                    if self.trainer is not None:
-                        self.log(f"B_lr{layer_index}", layer_optimizer.param_groups[0]["lr"])
-                    loss = loss.detach()
-                else:
-                    assert isinstance(loss, Tensor) and not loss.requires_grad
-                    # When not training that layer,
-                    loss = torch.as_tensor(loss, device=y.device)
-
-                logger.debug(
-                    f"Layer {layer_index}, Iteration {iteration}, angle={angle}, "
-                    f"distance={distance}"
-                )
-                iteration_losses.append(loss)
-                iteration_angles.append(angle)
-                iteration_distances.append(distance)
-
-                # IDEA: If weg log these values once per iteration, will the plots look nice?
-                # self.log(f"{self.phase}/B_loss[{layer_index}]", loss)
-                # self.log(f"{self.phase}/B_angle[{layer_index}]", angle)
-                # self.log(f"{self.phase}/B_distance[{layer_index}]", distance)
-
-            layer_losses.append(iteration_losses)
-            layer_angles.append(iteration_angles)
-            layer_distances.append(iteration_distances)
-
-            # IDEA: Logging the number of iterations could be useful if we add some kind of early
-            # stopping for the feedback training, since the number of iterations might vary.
-            total_iter_loss = sum(iteration_losses)
-            if iterations_i > 0:
-                avg_iter_loss = total_iter_loss / iterations_i
-                layer_avg_losses.append(avg_iter_loss)
-
-            if self.trainer is not None:
-                self.log(f"{phase}/B_total_loss[{layer_index}]", total_iter_loss)
-                if iterations_i > 0:
-                    self.log(f"{phase}/B_avg_loss[{layer_index}]", avg_iter_loss)
-                self.log(f"{phase}/B_iterations[{layer_index}]", iterations_i)
-            # NOTE: Logging all the distances and angles for each layer, which isn't ideal!
-            # What would be nicer would be to log this as a small, light-weight plot showing the
-            # evolution of the distances / angles for each layer.
-            # self.log(f"{self.phase}/B_angles[{layer_index}]", iteration_angles)
-            # self.log(f"{self.phase}/B_distances[{layer_index}]", iteration_distances)
-
-        if (
-            self.training
-            and self.global_step % self.hp.plot_every == 0
-            and self.trainer is not None
-        ):
-            fig = make_stacked_feedback_training_figure(
-                all_values=[layer_angles, layer_distances, layer_losses],
-                row_titles=["angles", "distances", "losses"],
-                title_text=(
-                    f"Evolution of various metrics during feedback weight training "
-                    f"(global_step={self.global_step})"
-                ),
+        # Train the current autoencoder:
+        for iteration in range(iterations_i):
+            assert noise_scale_i > 0, (
+                layer_index,
+                iterations_i,
             )
-            fig_name = f"feedback_training_{self.global_step}"
-            figures_dir = Path(self.trainer.log_dir or ".") / "figures"
-            figures_dir.mkdir(exist_ok=True, parents=False)
-            save_path: Path = figures_dir / fig_name
-            fig.write_image(str(save_path.with_suffix(".png")))
-            logger.info(f"Figure saved at path {save_path.with_suffix('.png')}")
-            # TODO: Figure out why exactly logger.info isn't showing up.
-            print(f"Figure saved at path {save_path.with_suffix('.png')}")
+            # Get the loss (see `feedback_loss.py`)
+            loss = self.layer_feedback_loss(
+                feedback_layer=G_i,
+                forward_layer=F_i,
+                input=x_i,
+                output=y_i,
+                noise_scale=noise_scale_i,
+                noise_samples=self.hp.feedback_samples_per_iteration,
+            )
 
-            if self.config.debug:
-                # Also save an HTML version when debugging.
-                fig.write_html(str(save_path.with_suffix(".html")), include_plotlyjs="cdn")
+            # Compute the angle and distance for debugging the training of the
+            # feedback weights:
+            with torch.no_grad():
+                metrics = compute_dist_angle(F_i, G_i)
+                if isinstance(metrics, dict):
+                    # NOTE: When a block has more than one trainable layer, we only report the
+                    # first value for now.
+                    # TODO: Fix this later.
+                    while isinstance(metrics, dict):
+                        first_key = list(metrics.keys())[0]
+                        metrics = metrics[first_key]
+                    distance, angle = metrics
+                else:
+                    distance, angle = metrics
 
-            if wandb.run:
-                wandb.log({"feedback_training": fig})
+            # perform the optimization step for that layer when training.
+            if self.training and layer_optimizer:
+                assert isinstance(loss, Tensor) and loss.requires_grad
+                layer_optimizer.zero_grad()
+                loss.backward()
+                layer_optimizer.step()
+                loss = loss.detach()
+            else:
+                assert isinstance(loss, Tensor) and not loss.requires_grad
+                # When not training that layer,
+                loss = torch.as_tensor(loss, device=y.device)
 
-        # NOTE: Need to return something.
+            logger.debug(
+                f"Layer {layer_index}, Iteration {iteration}, angle={angle}, "
+                f"distance={distance}"
+            )
+            iteration_losses.append(loss)
+            iteration_angles.append(angle)
+            iteration_distances.append(distance)
+
+            # IDEA: If weg log these values once per iteration, will the plots look nice?
+            # self.log(f"{self.phase}/B_loss[{layer_index}]", loss)
+            # self.log(f"{self.phase}/B_angle[{layer_index}]", angle)
+            # self.log(f"{self.phase}/B_distance[{layer_index}]", distance)
+
+        layer_losses.append(iteration_losses)
+        layer_angles.append(iteration_angles)
+        layer_distances.append(iteration_distances)
+
+        # IDEA: Logging the number of iterations could be useful if we add some kind of early
+        # stopping for the feedback training, since the number of iterations might vary.
+        total_iter_loss = sum(iteration_losses)
+        if iterations_i > 0:
+            avg_iter_loss = total_iter_loss / iterations_i
+            layer_avg_losses.append(avg_iter_loss)
+        # NOTE: Logging all the distances and angles for each layer, which isn't ideal!
+        # What would be nicer would be to log this as a small, light-weight plot showing the
+        # evolution of the distances / angles for each layer.
+        # self.log(f"{self.phase}/B_angles[{layer_index}]", iteration_angles)
+        # self.log(f"{self.phase}/B_distances[{layer_index}]", iteration_distances)
+
         total_b_loss = sum(sum(iteration_losses) for iteration_losses in layer_losses)
         avg_b_loss = sum(layer_avg_losses) / len(layer_avg_losses)
+        print(f"[rank {rank}] avg_b_loss {avg_b_loss.item()}")
         return {
             "loss": total_b_loss,
             "avg_loss": avg_b_loss,
@@ -424,7 +346,9 @@ class LayerParallelDTP(LightningModule):
             "layer_distances": layer_distances,
         }
 
-    def forward_loss(self, x: Tensor, y: Tensor, phase: str) -> Dict[str, Union[Tensor, Any]]:
+    def forward_loss(
+        self, x: Tensor, y: Tensor, rank: int, phase: str
+    ) -> Dict[str, Union[Tensor, Any]]:
         """Get the loss used to train the forward net.
 
         NOTE: Unlike `feedback_loss`, this actually returns the 'live' loss tensor.
@@ -433,7 +357,6 @@ class LayerParallelDTP(LightningModule):
         ## --------
         # return super().forward_loss(x=x, y=y)
         ## --------
-        step_outputs: Dict[str, Union[Tensor, Any]] = {}
         ys: List[Tensor] = forward_all(
             self.forward_net,
             x,
@@ -450,8 +373,9 @@ class LayerParallelDTP(LightningModule):
             # self.trainer is None in some unit tests which only use PL module
             if self.trainer is not None:
                 probs = torch.softmax(logits, -1)
-                self.log(f"{phase}/accuracy", self.accuracy(probs, labels), prog_bar=True)
-                self.log(f"{phase}/top5_accuracy", self.top5_accuracy(probs, labels))
+                if rank == 0:
+                    print(f"[rank {rank}] {phase}/top1 {self.accuracy(probs, labels)}")
+                    print(f"[rank {rank}] {phase}/top5 {self.accuracy(probs, labels)}")
 
             temp_logits = logits.detach().clone()
             temp_logits.requires_grad_(True)
@@ -467,8 +391,8 @@ class LayerParallelDTP(LightningModule):
         y_n_grad = grads[0]
         delta = -self.hp.beta * y_n_grad
 
-        if self.trainer is not None:
-            self.log(f"{phase}/delta.norm()", delta.norm())
+        # if self.trainer is not None and rank == 0:
+        #     self.trainer.logger.log_metrics(f"{phase}/delta.norm()", delta.norm())
         # Compute the first target (for the last layer of the forward network):
         last_layer_target = logits.detach() + delta
 
@@ -482,7 +406,7 @@ class LayerParallelDTP(LightningModule):
 
         # Reverse the ordering of the layers, just to make the indexing in the code below match
         # those of the math equations.
-        reordered_feedback_net: Sequential = self.backward_net[::-1]  # type: ignore
+        reordered_feedback_net: nn.Sequential = self.backward_net[::-1]  # type: ignore
 
         # Calculate the targets for each layer, moving backward through the forward net:
         # N-1, N-2, ..., 2, 1
@@ -507,7 +431,6 @@ class LayerParallelDTP(LightningModule):
         # NOTE: targets[0] is the targets for the output of the first layer, not for x.
         # Make sure that all targets have been computed and that they are fixed (don't require grad)
         assert all(target is not None and not target.requires_grad for target in targets)
-        target_tensors = cast(List[Tensor], targets)  # Rename just for typing purposes.
 
         # Calculate the losses for each layer:
         forward_loss_per_layer = []
@@ -521,9 +444,9 @@ class LayerParallelDTP(LightningModule):
                 forward_loss_per_layer.append(layer_loss)
 
         # self.trainer is None in some unit tests which only use PL module
-        if self.trainer is not None:
-            for i, layer_loss in enumerate(forward_loss_per_layer):
-                self.log(f"{phase}/F_loss[{i}]", layer_loss)
+        # if self.trainer is not None and rank == 0:
+        #     for i, layer_loss in enumerate(forward_loss_per_layer):
+        #         self.trainer.logger.log_metrics(f"{phase}/F_loss[{i}]", layer_loss)
 
         loss_tensor = torch.stack(forward_loss_per_layer, dim=0)
         # TODO: Use 'sum' or 'mean' as the reduction between layers?
