@@ -36,7 +36,7 @@ class LayerParallelTrainer:
     model.hparams.feedback_training_iterations=[25,35,40,60,25] \
     model.hparams.f_optim.lr=0.01 \
     model.hparams.b_optim.momentum=0.9 \
-    model.hparams.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18] \
+    model.hparams.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18]
     """
 
     def __init__(self, gpus, max_epochs, seed) -> None:
@@ -65,8 +65,8 @@ class LayerParallelTrainer:
 
     def fit_worker(self, rank, size, model, datamodule):
         self.device = torch.device("cuda:{}".format(rank))  # set different GPU for each process
-        # self.device = torch.device("cuda:{}".format(rank % 2))  # test on just 2 gpus
-        # self.device = torch.device("cuda:0")
+        # self.device = torch.device("cuda:{}".format(rank % 2))  # test on 2 gpus
+        # self.device = torch.device("cuda:0")  # test on just 1 gpu
         print(f"[rank {rank}] {self.seed}")
 
         # we set same seed for each process since we want to have exact same
@@ -78,6 +78,7 @@ class LayerParallelTrainer:
             dist.broadcast(param.data, src=0)
 
         datamodule.setup(stage="fit")
+        dist.barrier()  # wait for dataloading on all processes to finish
         # test if you get same batches
         # batch = next(iter(datamodule.train_dataloader()))
         # print(f"rank {rank}, seed {self.seed}, batch labels: {batch[1]}")
