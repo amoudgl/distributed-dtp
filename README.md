@@ -6,8 +6,44 @@ The following code runs on Python > 3.6 with Pytorch 1.7.0.
 pip install -e .
 ```
 
-## Running the code (Hydra)
+## Running the code
 
+
+### Layer parallel implementation
+
+For fast DTP training with layer parallelism on CIFAR-10, do:
+```
+python main.py model=layer_parallel_dtp \
+trainer=layer_parallel \
+scheduler=cosine \
+network=simple_vgg \
+datamodule=cifar10 \
+datamodule.num_workers=1 \
+trainer.gpus=6
+```
+The above command will launch N processes corresponding to N layers in the backward net. Any number of GPUs can be passed via command line, each process will use GPU device `rank % trainer.gpus`.
+
+
+It is recommended to use `trainer.gpus=1` for debugging.
+
+
+For ImageNet, do:
+```
+python main.py model=layer_parallel_dtp \
+trainer=layer_parallel \
+scheduler=cosine \
+network=simple_vgg \
+datamodule=imagenet32 \
+datamodule.num_workers=1 \
+trainer.gpus=6 \
+datamodule.batch_size=256 \
+model.hparams.feedback_training_iterations=[25,35,40,60,25] \
+model.hparams.f_optim.lr=0.01 \
+model.hparams.b_optim.momentum=0.9 \
+model.hparams.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18]
+```
+
+### Sequential implementation
 To train with DTP on CIFAR-10, do:
 ```
 python main.py \
