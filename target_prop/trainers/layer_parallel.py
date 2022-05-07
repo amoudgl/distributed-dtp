@@ -49,10 +49,8 @@ class LayerParallelTrainer:
         # setup distributed processes
         processes = []
         mp.set_start_method("spawn")
-        size = self.gpus
-        assert size == len(
-            model.backward_net
-        ), "number of layers must be equal to number of processes for layer parallel feedback weight training"
+        # number of layers must be equal to number of processes for layer parallel feedback weight training
+        size = len(model.backward_net)
         for rank in range(size):
             p = mp.Process(
                 target=init_process,
@@ -64,9 +62,9 @@ class LayerParallelTrainer:
             p.join()
 
     def fit_worker(self, rank, size, model, datamodule):
-        self.device = torch.device("cuda:{}".format(rank))  # set different GPU for each process
-        # self.device = torch.device("cuda:{}".format(rank % 2))  # test on 2 gpus
-        # self.device = torch.device("cuda:0")  # test on just 1 gpu
+        self.device = torch.device(
+            "cuda:{}".format(rank % self.gpus)
+        )  # set different GPU for each process
         print(f"[rank {rank}] {self.seed}")
 
         # we set same seed for each process since we want to have exact same
