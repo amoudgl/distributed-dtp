@@ -6,6 +6,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 from pytorch_lightning.utilities.seed import seed_everything
 from torch import Tensor
+from tqdm import tqdm
 
 
 def init_process(rank, size, fn, backend, *args):
@@ -21,7 +22,21 @@ class LayerParallelTrainer:
     Multi-GPU layer parallel trainer for DTP.
 
     Works with DTP layer parallel model, can be tested with the following command:
-    python main.py model=layer_parallel_dtp trainer=layer_parallel scheduler=cosine network=simple_vgg datamodule=cifar10 trainer.gpus=6
+    python main.py model=layer_parallel_dtp trainer=layer_parallel scheduler=cosine network=simple_vgg datamodule=cifar10 trainer.gpus=6 datamodule.num_workers=1
+
+    For imagenet32, do:
+    python main.py model=layer_parallel_dtp \
+    trainer=layer_parallel \
+    scheduler=cosine \
+    network=simple_vgg \
+    datamodule=imagenet32 \
+    datamodule.num_workers=1 \
+    trainer.gpus=6 \
+    datamodule.batch_size=256 \
+    model.hparams.feedback_training_iterations=[25,35,40,60,25] \
+    model.hparams.f_optim.lr=0.01 \
+    model.hparams.b_optim.momentum=0.9 \
+    model.hparams.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18] \
     """
 
     def __init__(self, gpus, max_epochs, seed) -> None:
@@ -49,9 +64,11 @@ class LayerParallelTrainer:
             p.join()
 
     def fit_worker(self, rank, size, model, datamodule):
-        # self.device = torch.device("cuda:{}".format(rank))  # set different GPU for each process
-        self.device = torch.device("cuda:0")
+        self.device = torch.device("cuda:{}".format(rank))  # set different GPU for each process
+        # self.device = torch.device("cuda:{}".format(rank % 2))  # test on just 2 gpus
+        # self.device = torch.device("cuda:0")
         print(f"[rank {rank}] {self.seed}")
+
         # we set same seed for each process since we want to have exact same
         # batch on every process, we just parallelize the feedback training not data
         seed_everything(self.seed, workers=True)
@@ -89,6 +106,8 @@ class LayerParallelTrainer:
         model.lr_schedulers = self.lr_schedulers
         losses = []
         rank = dist.get_rank()
+        if rank == 0:
+            pbar = tqdm(total=len(train_dataloader))
 
         for step, batch in enumerate(train_dataloader):
             # transfer batch to device
@@ -108,7 +127,6 @@ class LayerParallelTrainer:
             #             f"[rank {rank}][step {step}] feedback net param layer {i} {model.backward_net[::-1][i][-1].weight.data.view(-1)[:10]}"
             #         )
             # sync feedback net params
-            # dist.barrier()
             updated_param_list = [None for _ in range(dist.get_world_size())]
             dist.all_gather_object(updated_param_list, model.backward_net[::-1][rank].state_dict())
             for i, layer in enumerate(model.backward_net[::-1]):
@@ -127,6 +145,9 @@ class LayerParallelTrainer:
             # (not necessary)
 
             # forward weight training
+            # print(
+            #     f"[rank {rank}][step {step}] forward net param layer {i} {model.forward_net[2][0].weight.data.view(-1)[:10]}"
+            # )
             forward_training_outputs: Dict = model.forward_loss(x, y, rank=rank, phase="train")
             forward_loss: Tensor = forward_training_outputs["loss"]
             forward_optimizer = model.forward_optimizer
@@ -136,7 +157,10 @@ class LayerParallelTrainer:
             # self.logger.log(f"F_lr", forward_optimizer.param_groups[0]["lr"])
             forward_loss = forward_loss.detach()
             last_layer_loss: Tensor = forward_training_outputs["layer_losses"][-1].detach()
-            print(f"[rank {rank}][step {step}] forward loss {last_layer_loss.item()}")
+            if rank == 0:
+                pbar.set_description("loss {:0.4f}".format(last_layer_loss.item()))
+                pbar.update(1)
+                # print(f"[rank {rank}][step {step}] forward loss {last_layer_loss.item()}")
             losses.append(last_layer_loss.item())
         return torch.tensor(losses).mean()
 

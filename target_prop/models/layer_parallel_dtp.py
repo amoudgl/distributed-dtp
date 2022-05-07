@@ -337,7 +337,7 @@ class LayerParallelDTP(LightningModule):
 
         total_b_loss = sum(sum(iteration_losses) for iteration_losses in layer_losses)
         avg_b_loss = sum(layer_avg_losses) / len(layer_avg_losses)
-        print(f"[rank {rank}] avg_b_loss {avg_b_loss.item()}")
+        # print(f"[rank {rank}] avg_b_loss {avg_b_loss.item()}")
         return {
             "loss": total_b_loss,
             "avg_loss": avg_b_loss,
@@ -373,9 +373,9 @@ class LayerParallelDTP(LightningModule):
             # self.trainer is None in some unit tests which only use PL module
             if self.trainer is not None:
                 probs = torch.softmax(logits, -1)
-                if rank == 0:
-                    print(f"[rank {rank}] {phase}/top1 {self.accuracy(probs, labels)}")
-                    print(f"[rank {rank}] {phase}/top5 {self.accuracy(probs, labels)}")
+                # if rank == 0:
+                #     print(f"[rank {rank}] {phase}/top1 {self.accuracy(probs, labels)}")
+                #     print(f"[rank {rank}] {phase}/top5 {self.top5_accuracy(probs, labels)}")
 
             temp_logits = logits.detach().clone()
             temp_logits.requires_grad_(True)
