@@ -2,7 +2,7 @@
 
 The following code runs on Python > 3.6 with Pytorch 1.7.0.
 ## Installation
-```console
+```
 pip install -e .
 ```
 
@@ -78,7 +78,7 @@ python main.py \
 ### Legacy Implementation
 To check training on CIFAR-10, type the following command in the terminal:
 
-```console
+```
 python main.py --batch-size 128 \
     --C 128 128 256 256 512 \
     --iter 20 30 35 55 20 \
