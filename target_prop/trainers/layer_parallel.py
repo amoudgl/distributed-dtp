@@ -190,6 +190,10 @@ class LayerParallelTrainer:
         model.eval()
         top1 = AverageMeter("Acc@1", ":6.2f", Summary.AVERAGE)
         top5 = AverageMeter("Acc@5", ":6.2f", Summary.AVERAGE)
+        rank = dist.get_rank() if dist.is_initialized() else 0
+        if rank == 0:
+            print("evaluating...")
+            pbar = tqdm(total=len(val_dataloader))
 
         for step, batch in enumerate(val_dataloader):
             # transfer batch to device
@@ -202,6 +206,9 @@ class LayerParallelTrainer:
             # update metrics
             top1.update(output["top1_acc"], x.size(0))
             top5.update(output["top5_acc"], x.size(0))
+
+            if rank == 0:
+                pbar.update(1)
         return top1.avg, top5.avg
 
     def test(self, model, datamodule, verbose=False):
