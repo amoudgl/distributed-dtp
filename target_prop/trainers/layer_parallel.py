@@ -21,30 +21,12 @@ def init_process(rank, size, fn, backend, *args):
 class LayerParallelTrainer:
     """
     Multi-GPU layer parallel trainer for DTP.
-
-    Works with DTP layer parallel model, can be tested with the following command:
-    python main.py model=layer_parallel_dtp trainer=layer_parallel scheduler=cosine network=simple_vgg datamodule=cifar10 datamodule.num_workers=1 trainer.gpus=6
-
-    For imagenet32, do:
-    python main.py model=layer_parallel_dtp \
-    trainer=layer_parallel \
-    scheduler=cosine \
-    network=simple_vgg \
-    datamodule=imagenet32 \
-    datamodule.num_workers=1 \
-    trainer.gpus=6 \
-    datamodule.batch_size=256 \
-    model.hparams.feedback_training_iterations=[25,35,40,60,25] \
-    model.hparams.f_optim.lr=0.01 \
-    model.hparams.b_optim.momentum=0.9 \
-    model.hparams.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18]
     """
 
     def __init__(self, gpus, max_epochs, seed) -> None:
         self.max_epochs = max_epochs
         self.gpus = gpus
         self.seed = seed
-        # self.device = "cpu" if not torch.cuda.is_available() else torch.cuda.current_device()
 
     def fit(self, model, datamodule):
         # setup distributed processes
