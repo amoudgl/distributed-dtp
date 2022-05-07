@@ -367,12 +367,9 @@ class LayerParallelDTP(LightningModule):
         # NOTE: Need to manually enable grad here so that we can also compute the first
         # target during validation / testing.
         with torch.set_grad_enabled(True):
-
-            # self.trainer is None in some unit tests which only use PL module
-            if self.trainer is not None:
-                probs = torch.softmax(logits, -1)
-                top1_acc = self.accuracy(probs, labels)
-                top5_acc = self.top5_accuracy(probs, labels)
+            probs = torch.softmax(logits, -1)
+            top1_acc = self.accuracy(probs, labels)
+            top5_acc = self.top5_accuracy(probs, labels)
 
             temp_logits = logits.detach().clone()
             temp_logits.requires_grad_(True)

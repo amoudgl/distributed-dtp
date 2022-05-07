@@ -207,6 +207,10 @@ class LayerParallelTrainer:
     def test(self, model, datamodule, verbose=False):
         # verbose argument is just a dummy argument to match lightning format
         datamodule.setup(stage="test")
+        if not hasattr(self, "device"):
+            # use current device when model is directly tested without training
+            self.device = torch.cuda.current_device()
+            model = model.to(self.device)
         top1, top5 = self.val_epoch(model, datamodule.test_dataloader())
         # keep return format for test method consistent with other trainers
         return [{"test/accuracy": top1, "test/top5_accuracy": top5}]
