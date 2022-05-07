@@ -84,7 +84,7 @@ class LayerParallelTrainer:
 
         optim_config = model.configure_optimizers()
         self.setup_optim(optim_config)
-        scheduler = self._schedulers[0]
+        scheduler = self._schedulers[0] if len(self._schedulers) > 0 else None
         model = model.to(self.device)
         model.trainer = self  # set trainer as model's attribute like lightning
 
@@ -97,9 +97,11 @@ class LayerParallelTrainer:
             top1, top5 = self.val_epoch(model, datamodule.val_dataloader())
 
             # scheduler step
-            scheduler.step()
-            summary = f"[epoch {epoch}] top1:{top1:6.2f} top5:{top5:6.2f}"
-            print(summary)
+            if scheduler:
+                scheduler.step()
+            if dist.get_rank() == 0:
+                summary = f"[epoch {epoch}] top1:{top1:6.2f} top5:{top5:6.2f}"
+                print(summary)
 
     def train_epoch(self, model, train_dataloader, optim_config):
         model.train()
@@ -206,9 +208,9 @@ class LayerParallelTrainer:
             # update metrics
             top1.update(output["top1_acc"], x.size(0))
             top5.update(output["top5_acc"], x.size(0))
-
             if rank == 0:
                 pbar.update(1)
+
         return top1.avg, top5.avg
 
     def test(self, model, datamodule, verbose=False):
