@@ -346,9 +346,7 @@ class LayerParallelDTP(LightningModule):
             "layer_distances": layer_distances,
         }
 
-    def forward_loss(
-        self, x: Tensor, y: Tensor, rank: int, phase: str
-    ) -> Dict[str, Union[Tensor, Any]]:
+    def forward_loss(self, x: Tensor, y: Tensor, phase: str) -> Dict[str, Union[Tensor, Any]]:
         """Get the loss used to train the forward net.
 
         NOTE: Unlike `feedback_loss`, this actually returns the 'live' loss tensor.
@@ -373,9 +371,8 @@ class LayerParallelDTP(LightningModule):
             # self.trainer is None in some unit tests which only use PL module
             if self.trainer is not None:
                 probs = torch.softmax(logits, -1)
-                # if rank == 0:
-                #     print(f"[rank {rank}] {phase}/top1 {self.accuracy(probs, labels)}")
-                #     print(f"[rank {rank}] {phase}/top5 {self.top5_accuracy(probs, labels)}")
+                top1_acc = self.accuracy(probs, labels)
+                top5_acc = self.top5_accuracy(probs, labels)
 
             temp_logits = logits.detach().clone()
             temp_logits.requires_grad_(True)
@@ -454,6 +451,8 @@ class LayerParallelDTP(LightningModule):
         return {
             "loss": forward_loss,
             "layer_losses": forward_loss_per_layer,
+            "top1_acc": top1_acc,
+            "top5_acc": top5_acc,
         }
 
     def compute_target(self, i: int, G: nn.Module, hs: List[Tensor], prev_target: Tensor) -> Tensor:

@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import torch
@@ -22,7 +23,7 @@ class LayerParallelTrainer:
     Multi-GPU layer parallel trainer for DTP.
 
     Works with DTP layer parallel model, can be tested with the following command:
-    python main.py model=layer_parallel_dtp trainer=layer_parallel scheduler=cosine network=simple_vgg datamodule=cifar10 trainer.gpus=6 datamodule.num_workers=1
+    python main.py model=layer_parallel_dtp trainer=layer_parallel scheduler=cosine network=simple_vgg datamodule=cifar10 datamodule.num_workers=1 trainer.gpus=6
 
     For imagenet32, do:
     python main.py model=layer_parallel_dtp \
@@ -93,11 +94,12 @@ class LayerParallelTrainer:
             self.train_epoch(model, datamodule.train_dataloader(), optim_config)
 
             # evaluate model on validation set
-            metric = self.val_epoch(model, datamodule.val_dataloader())
+            top1, top5 = self.val_epoch(model, datamodule.val_dataloader())
 
             # scheduler step
             scheduler.step()
-            print(f"epoch: {epoch}, val metric: {metric}")
+            summary = f"[epoch {epoch}] top1:{top1:6.2f} top5:{top5:6.2f}"
+            print(summary)
 
     def train_epoch(self, model, train_dataloader, optim_config):
         model.train()
@@ -147,7 +149,7 @@ class LayerParallelTrainer:
             # print(
             #     f"[rank {rank}][step {step}] forward net param layer {i} {model.forward_net[2][0].weight.data.view(-1)[:10]}"
             # )
-            forward_training_outputs: Dict = model.forward_loss(x, y, rank=rank, phase="train")
+            forward_training_outputs: Dict = model.forward_loss(x, y, phase="train")
             forward_loss: Tensor = forward_training_outputs["loss"]
             forward_optimizer = model.forward_optimizer
             forward_optimizer.zero_grad()
@@ -157,7 +159,11 @@ class LayerParallelTrainer:
             forward_loss = forward_loss.detach()
             last_layer_loss: Tensor = forward_training_outputs["layer_losses"][-1].detach()
             if rank == 0:
-                pbar.set_description("loss {:0.4f}".format(last_layer_loss.item()))
+                pbar.set_description(
+                    "loss: {:4.4f}, top1: {:4.4f}".format(
+                        last_layer_loss.item(), forward_training_outputs["top1_acc"].item()
+                    )
+                )
                 pbar.update(1)
                 # print(f"[rank {rank}][step {step}] forward loss {last_layer_loss.item()}")
             losses.append(last_layer_loss.item())
@@ -182,19 +188,76 @@ class LayerParallelTrainer:
 
     def val_epoch(self, model, val_dataloader):
         model.eval()
-        metrics = []
+        top1 = AverageMeter("Acc@1", ":6.2f", Summary.AVERAGE)
+        top5 = AverageMeter("Acc@5", ":6.2f", Summary.AVERAGE)
 
         for step, batch in enumerate(val_dataloader):
             # transfer batch to device
             batch = tuple(t.to(device=self.device) for t in batch)
 
             # forward pass
-            metric = model.validation_step(batch, step)
-            metrics.append(metric.item())
+            x, y = batch
+            output: Dict = model.forward_loss(x, y, phase="val")
 
-        return torch.tensor(metrics).mean()
+            # update metrics
+            top1.update(output["top1_acc"], x.size(0))
+            top5.update(output["top5_acc"], x.size(0))
+        return top1.avg, top5.avg
 
     def test(self, model, datamodule, verbose=False):
         # verbose argument is just a dummy argument to match lightning format
         datamodule.setup(stage="test")
-        return self.val_epoch(model, datamodule.test_dataloader())
+        top1, top5 = self.val_epoch(model, datamodule.test_dataloader())
+        # keep return format for test method consistent with other trainers
+        return [{"test/accuracy": top1, "test/top5_accuracy": top5}]
+
+
+class Summary(Enum):
+    NONE = 0
+    AVERAGE = 1
+    SUM = 2
+    COUNT = 3
+
+
+class AverageMeter(object):
+    """
+    Computes and stores the average and current value
+    (Cloned from PyTorch examples repo)
+    """
+
+    def __init__(self, name, fmt=":f", summary_type=Summary.AVERAGE):
+        self.name = name
+        self.fmt = fmt
+        self.summary_type = summary_type
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+    def __str__(self):
+        fmtstr = "{name} {val" + self.fmt + "} ({avg" + self.fmt + "})"
+        return fmtstr.format(**self.__dict__)
+
+    def summary(self):
+        fmtstr = ""
+        if self.summary_type is Summary.NONE:
+            fmtstr = ""
+        elif self.summary_type is Summary.AVERAGE:
+            fmtstr = "{name} {avg:.3f}"
+        elif self.summary_type is Summary.SUM:
+            fmtstr = "{name} {sum:.3f}"
+        elif self.summary_type is Summary.COUNT:
+            fmtstr = "{name} {count:.3f}"
+        else:
+            raise ValueError("invalid summary type %r" % self.summary_type)
+
+        return fmtstr.format(**self.__dict__)

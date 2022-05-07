@@ -50,15 +50,16 @@ def run(cfg: DictConfig):
     trainer.fit(model, datamodule=datamodule)
 
     # run on test set
-    # test_results = trainer.test(model, datamodule=datamodule, verbose=True)
+    test_results = trainer.test(model, datamodule=datamodule, verbose=True)
 
     # # display experiment results
-    # wandb.finish()
-    # top1_accuracy: float = test_results[0]["test/accuracy"]
-    # top5_accuracy: float = test_results[0]["test/top5_accuracy"]
-    # print(f"Test top1 accuracy: {top1_accuracy:.1%}")
-    # print(f"Test top5 accuracy: {top5_accuracy:.1%}")
-    # return top1_accuracy, top5_accuracy
+    if wandb.run:
+        wandb.finish()
+    top1_accuracy: float = test_results[0]["test/accuracy"]
+    top5_accuracy: float = test_results[0]["test/top5_accuracy"]
+    print(f"Test top1 accuracy: {top1_accuracy:.1%}")
+    print(f"Test top5 accuracy: {top5_accuracy:.1%}")
+    return top1_accuracy, top5_accuracy
 
 
 if __name__ == "__main__":
