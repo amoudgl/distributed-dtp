@@ -2,6 +2,7 @@ _target_: target_prop.trainers.LayerParallelTrainer
 max_epochs: 90
 gpus: 1
 seed: ${seed}
+backend: "gloo"
 # limit_train_batches: 1.0
 # limit_val_batches: 1.0
 # limit_test_batches: 1.0

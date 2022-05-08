@@ -23,10 +23,11 @@ class LayerParallelTrainer:
     Multi-GPU layer parallel trainer for DTP.
     """
 
-    def __init__(self, gpus, max_epochs, seed) -> None:
+    def __init__(self, gpus, max_epochs, seed, backend='gloo') -> None:
         self.max_epochs = max_epochs
         self.gpus = gpus
         self.seed = seed
+        self.backend = backend
 
     def fit(self, model, datamodule):
         # setup distributed processes
@@ -37,7 +38,7 @@ class LayerParallelTrainer:
         for rank in range(size):
             p = mp.Process(
                 target=init_process,
-                args=(rank, size, self.fit_worker, "gloo", model, datamodule),
+                args=(rank, size, self.fit_worker, self.backend, model, datamodule),
             )
             p.start()
             processes.append(p)
