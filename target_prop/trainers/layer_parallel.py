@@ -178,7 +178,7 @@ class LayerParallelTrainer:
         rank = dist.get_rank() if dist.is_initialized() else 0
         if rank == 0:
             print("evaluating...")
-            pbar = tqdm(total=len(val_dataloader))
+            pbar = tqdm(total=len(val_dataloader), smoothing=0.0)
 
         for step, batch in enumerate(val_dataloader):
             # transfer batch to device
