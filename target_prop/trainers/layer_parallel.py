@@ -93,7 +93,7 @@ class LayerParallelTrainer:
         losses = []
         rank = dist.get_rank()
         if rank == 0:
-            pbar = tqdm(total=len(train_dataloader))
+            pbar = tqdm(total=len(train_dataloader), smoothing=0.0)
 
         for step, batch in enumerate(train_dataloader):
             # transfer batch to device
