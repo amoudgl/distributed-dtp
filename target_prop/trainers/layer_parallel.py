@@ -83,7 +83,7 @@ class LayerParallelTrainer:
             if scheduler:
                 scheduler.step()
             if dist.get_rank() == 0:
-                summary = f"[epoch {epoch}] top1:{top1:6.2f} top5:{top5:6.2f}"
+                summary = f"[epoch {epoch}] top1:{top1:4.4f} top5:{top5:4.4f}"
                 print(summary)
 
     def train_epoch(self, model, train_dataloader, optim_config):
