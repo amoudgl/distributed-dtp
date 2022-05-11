@@ -1,5 +1,4 @@
 """run.py:"""
-#!/usr/bin/env python
 import os
 
 import torch
@@ -13,9 +12,7 @@ def run(rank, size):
     torch.cuda.set_device(device)
     if rank == 0:
         tensor = torch.tensor([1, 2])
-        # Send the tensor to process 1
     else:
-        # Receive tensor from process 0
         tensor = torch.tensor([3])
     tensor = tensor.to(device)
     tensor_list = [None, None]
