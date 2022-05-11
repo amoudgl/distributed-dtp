@@ -23,7 +23,7 @@ class LayerParallelTrainer:
     Multi-GPU layer parallel trainer for DTP.
     """
 
-    def __init__(self, gpus, max_epochs, seed, backend='gloo') -> None:
+    def __init__(self, gpus, max_epochs, seed, backend="gloo") -> None:
         self.max_epochs = max_epochs
         self.gpus = gpus
         self.seed = seed
@@ -49,15 +49,13 @@ class LayerParallelTrainer:
         self.device = torch.device(
             "cuda:{}".format(rank % self.gpus)
         )  # set different GPU for each process
-        print(f"[rank {rank}] {self.seed}")
+        print(f"[rank {rank}] using seed: {self.seed}")
+        torch.cuda.set_device(self.device)
+        print(f"[rank {rank}] using device: {torch.cuda.current_device()}")
 
         # we set same seed for each process since we want to have exact same
         # batch on every process, we just parallelize the feedback training not data
         seed_everything(self.seed, workers=True)
-
-        # broadcast params from rank 0 to all other processes just to be safe
-        for param in model.parameters():
-            dist.broadcast(param.data, src=0)
 
         datamodule.setup(stage="fit")
         dist.barrier()  # wait for dataloading on all processes to finish
@@ -70,6 +68,10 @@ class LayerParallelTrainer:
         scheduler = self._schedulers[0] if len(self._schedulers) > 0 else None
         model = model.to(self.device)
         model.trainer = self  # set trainer as model's attribute like lightning
+
+        # broadcast params from rank 0 to all other processes just to be safe
+        for param in model.parameters():
+            dist.broadcast(param.data, src=0)
 
         # training loop
         for epoch in range(self.max_epochs):
