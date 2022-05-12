@@ -1,6 +1,6 @@
 ## Benchmark 
 
-You can use the benchmark script to log time, memory usage and performance of any run. It keeps the same training config but just trains for 10 epochs N times where N can be used through command line by `+num_runs=10`. Following are some commands useful for benchmarking:
+You can use the benchmark script to log time, memory usage and performance of any run. It keeps the same training config but just trains for 10 epochs N times where N can be passed through command line by `+num_runs=10`. Following are some commands useful for benchmarking:
 
 
 Sequential DTP
