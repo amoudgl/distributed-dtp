@@ -32,6 +32,6 @@ setuptools.setup(
         "wandb",
         "plotly",
         "torchmetrics",
-        "hydra",
+        "hydra-core",
     ],
 )
