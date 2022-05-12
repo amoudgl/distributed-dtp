@@ -16,7 +16,7 @@ python benchmark.py \
     ++trainer.enable_checkpointing=false \
     ++trainer.limit_val_batches=0 \
     ++trainer.num_sanity_val_steps=0 \
-    ++trainer.enable_model_summary=false \
+    ++trainer.enable_model_summary=false 
     
 ```
 
