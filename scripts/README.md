@@ -31,5 +31,5 @@ python benchmark.py \
     datamodule=cifar10 \
     datamodule.num_workers=1 \
     trainer.gpus=6 \
-    +num_runs=10
+    ++num_runs=10
 ```
