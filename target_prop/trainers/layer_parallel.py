@@ -36,6 +36,8 @@ class LayerParallelTrainer:
         # number of layers must be equal to number of processes for layer parallel feedback weight training
         size = len(model.backward_net)
         for rank in range(size):
+            # set different GPU for each process
+            os.environ["CUDA_VISIBLE_DEVICES"] = str(rank % self.gpus)
             p = mp.Process(
                 target=init_process,
                 args=(rank, size, self.fit_worker, self.backend, model, datamodule),
@@ -46,12 +48,8 @@ class LayerParallelTrainer:
             p.join()
 
     def fit_worker(self, rank, size, model, datamodule):
-        self.device = torch.device(
-            "cuda:{}".format(rank % self.gpus)
-        )  # set different GPU for each process
+        self.device = torch.device("cuda:0")  # each process will see only one GPU
         print(f"[rank {rank}] using seed: {self.seed}")
-        torch.cuda.set_device(self.device)
-        print(f"[rank {rank}] using device: {torch.cuda.current_device()}")
 
         # we set same seed for each process since we want to have exact same
         # batch on every process, we just parallelize the feedback training not data
