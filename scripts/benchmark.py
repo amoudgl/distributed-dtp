@@ -29,7 +29,6 @@ def run(cfg: DictConfig):
         torch.cuda.empty_cache()
         torch.cuda.reset_accumulated_memory_stats()
         torch.cuda.reset_peak_memory_stats()
-        time.sleep(1)
 
         # create datamodule
         datamodule = instantiate(cfg.datamodule, data_dir=cfg.data_dir)
@@ -56,6 +55,7 @@ def run(cfg: DictConfig):
         # create trainer for benchmarking
         cfg.trainer.max_epochs = 10
         trainer = instantiate(cfg.trainer)
+        time.sleep(1)
 
         # run experiment
         time_start = time.perf_counter()
@@ -64,7 +64,7 @@ def run(cfg: DictConfig):
         time_end = time.perf_counter()
 
         # run on test set
-        test_results = trainer.test(model, datamodule=datamodule, verbose=True)
+        test_results = trainer.test(model, datamodule=datamodule, verbose=False)
         top1_accuracy: float = test_results[0]["test/accuracy"]
         top5_accuracy: float = test_results[0]["test/top5_accuracy"]
 
@@ -73,10 +73,10 @@ def run(cfg: DictConfig):
         hist_accuracies.append([top1_accuracy, top5_accuracy])
         hist_memory.append(used_memory)
 
-    print("{cfg.num_runs} runs benchmark results:")
-    print("durations: {hist_durations}")
-    print("accuracies ([top1, top5]): {hist_accuracies}")
-    print("memory: {hist_memory}")
+    print(f"{cfg.num_runs} runs benchmark results:")
+    print(f"durations (sec): {hist_durations}")
+    print(f"accuracies ([top1, top5]): {hist_accuracies}")
+    print(f"memory (bytes): {hist_memory}")
 
 
 if __name__ == "__main__":
