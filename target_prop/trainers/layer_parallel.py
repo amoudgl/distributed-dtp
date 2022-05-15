@@ -81,6 +81,8 @@ class LayerParallelTrainer:
 
         # training loop
         for epoch in range(self.max_epochs):
+            self.current_epoch = epoch
+
             # run training epoch
             self.train_epoch(model, datamodule.train_dataloader(), optim_config)
 
@@ -132,8 +134,10 @@ class LayerParallelTrainer:
             last_layer_loss: Tensor = forward_training_outputs["layer_losses"][-1].detach()
             if rank == 0:
                 pbar.set_description(
-                    "loss: {:4.4f}, top1: {:4.4f}".format(
-                        last_layer_loss.item(), forward_training_outputs["top1_acc"].item()
+                    "[epoch {}] loss: {:4.4f}, top1: {:4.4f}".format(
+                        self.current_epoch,
+                        last_layer_loss.item(),
+                        forward_training_outputs["top1_acc"].item(),
                     )
                 )
                 pbar.update(1)
