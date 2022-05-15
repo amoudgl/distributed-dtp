@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar, Union, cast
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+import wandb
 from pytorch_lightning.utilities.seed import seed_everything
 from torch import Tensor
 from tqdm import tqdm
@@ -23,11 +24,12 @@ class LayerParallelTrainer:
     Multi-GPU layer parallel trainer for DTP.
     """
 
-    def __init__(self, gpus, max_epochs, seed, backend="gloo") -> None:
+    def __init__(self, gpus, max_epochs, seed, backend, logger=None) -> None:
         self.max_epochs = max_epochs
         self.gpus = gpus
         self.seed = seed
         self.backend = backend
+        self.logger = logger
 
     def fit(self, model, datamodule):
         # setup distributed processes
@@ -92,11 +94,20 @@ class LayerParallelTrainer:
             # scheduler step
             if scheduler:
                 scheduler.step()
+
+            # log metrics
             if dist.get_rank() == 0:
                 summary = f"[epoch {epoch}] top1:{top1:4.4f} top5:{top5:4.4f}"
                 print(summary)
+                if self.logger is not None:
+                    self.logger.log_metrics(
+                        {"val/top1": top1, "val/top5": top5, "epoch": self.current_epoch}
+                    )
 
-        if dist.get_rank() == 0:  # send model to global memory
+        # finish training
+        if dist.get_rank() == 0:
+            if wandb.run:
+                wandb.finish()
             queue.put(model.cpu().state_dict())
             done.wait()
 
@@ -132,6 +143,8 @@ class LayerParallelTrainer:
             forward_optimizer.step()
             forward_loss = forward_loss.detach()
             last_layer_loss: Tensor = forward_training_outputs["layer_losses"][-1].detach()
+
+            # logging
             if rank == 0:
                 pbar.set_description(
                     "[epoch {}] loss: {:4.4f}, top1: {:4.4f}".format(
