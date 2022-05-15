@@ -35,7 +35,9 @@ class LayerParallelTrainer:
         mp.set_start_method("spawn")
         queue = mp.Queue()
         done = mp.Event()
-        # number of layers must be equal to number of processes for layer parallel feedback weight training
+
+        # set number of layers must be equal to number of processes for
+        # layer parallel feedback weight training
         size = len(model.backward_net)
         for rank in range(size):
             # set different GPU for each process
@@ -63,13 +65,10 @@ class LayerParallelTrainer:
         # we set same seed for each process since we want to have exact same
         # batch on every process, we just parallelize the feedback training not data
         seed_everything(self.seed, workers=True)
-
         datamodule.setup(stage="fit")
-        dist.barrier()  # wait for dataloading on all processes to finish
-        # test if you get same batches
-        # batch = next(iter(datamodule.train_dataloader()))
-        # print(f"rank {rank}, seed {self.seed}, batch labels: {batch[1]}")
+        dist.barrier()
 
+        # setup optimizers
         optim_config = model.configure_optimizers()
         self.setup_optim(optim_config)
         scheduler = self._schedulers[0] if len(self._schedulers) > 0 else None
@@ -184,13 +183,14 @@ class LayerParallelTrainer:
         return top1.avg, top5.avg
 
     def test(self, model, datamodule, verbose=False):
-        # verbose argument is just a dummy argument to match lightning format
+        # verbose argument is just a dummy argument for now to match lightning format
         datamodule.setup(stage="test")
         if not hasattr(self, "device"):
             # use current device when model is directly tested without training
             self.device = torch.cuda.current_device()
             model = model.to(self.device)
         top1, top5 = self.val_epoch(model, datamodule.test_dataloader())
+
         # keep return format for test method consistent with other trainers
         return [{"test/accuracy": top1, "test/top5_accuracy": top5}]
 
