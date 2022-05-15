@@ -103,37 +103,12 @@ class LayerParallelTrainer:
             x, y = batch
             feedback_training_outputs: Dict = model.feedback_loss(x, y, rank=rank, phase="train")
 
-            # for i in range(self.gpus):
-            #     if i == self.gpus - 1:
-            #         print(
-            #             f"[rank {rank}][step {step}] feedback net param layer {i} {model.backward_net[::-1][i][0].weight.data.view(-1)[:10]}"
-            #         )
-            #     else:
-            #         print(
-            #             f"[rank {rank}][step {step}] feedback net param layer {i} {model.backward_net[::-1][i][-1].weight.data.view(-1)[:10]}"
-            #         )
             # sync feedback net params
             updated_param_list = [None for _ in range(dist.get_world_size())]
             dist.all_gather_object(updated_param_list, model.backward_net[::-1][rank].state_dict())
             for i, layer in enumerate(model.backward_net[::-1]):
                 layer.load_state_dict(updated_param_list[i])
 
-            # for i in range(self.gpus):
-            #     if i == self.gpus - 1:
-            #         print(
-            #             f"[rank {rank}][step {step}] updated feedback net param layer {i} {model.backward_net[::-1][i][0].weight.data.view(-1)[:10]}"
-            #         )
-            #     else:
-            #         print(
-            #             f"[rank {rank}][step {step}] updated feedback net param layer {i} {model.backward_net[::-1][i][-1].weight.data.view(-1)[:10]}"
-            #         )
-            # broadcast forward params from rank 0 to be safe
-            # (not necessary)
-
-            # forward weight training
-            # print(
-            #     f"[rank {rank}][step {step}] forward net param layer {i} {model.forward_net[2][0].weight.data.view(-1)[:10]}"
-            # )
             # broadcast rng state so that all processes do same forward update
             rng_state = torch.cuda.get_rng_state()
             dist.broadcast(rng_state, src=0)
@@ -146,7 +121,6 @@ class LayerParallelTrainer:
             forward_optimizer.zero_grad()
             forward_loss.backward()
             forward_optimizer.step()
-            # self.logger.log(f"F_lr", forward_optimizer.param_groups[0]["lr"])
             forward_loss = forward_loss.detach()
             last_layer_loss: Tensor = forward_training_outputs["layer_losses"][-1].detach()
             if rank == 0:
@@ -156,7 +130,6 @@ class LayerParallelTrainer:
                     )
                 )
                 pbar.update(1)
-                # print(f"[rank {rank}][step {step}] forward loss {last_layer_loss.item()}")
             losses.append(last_layer_loss.item())
         return torch.tensor(losses).mean()
 
