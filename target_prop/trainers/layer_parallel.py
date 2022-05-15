@@ -109,11 +109,6 @@ class LayerParallelTrainer:
             for i, layer in enumerate(model.backward_net[::-1]):
                 layer.load_state_dict(updated_param_list[i])
 
-            # broadcast rng state so that all processes do same forward update
-            rng_state = torch.cuda.get_rng_state()
-            dist.broadcast(rng_state, src=0)
-            torch.cuda.set_rng_state(rng_state)
-
             # target propagation and forward update
             forward_training_outputs: Dict = model.forward_loss(x, y, phase="train")
             forward_loss: Tensor = forward_training_outputs["loss"]
