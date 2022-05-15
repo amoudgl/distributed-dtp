@@ -134,6 +134,12 @@ class LayerParallelTrainer:
             # print(
             #     f"[rank {rank}][step {step}] forward net param layer {i} {model.forward_net[2][0].weight.data.view(-1)[:10]}"
             # )
+            # broadcast rng state so that all processes do same forward update
+            rng_state = torch.cuda.get_rng_state()
+            dist.broadcast(rng_state, src=0)
+            torch.cuda.set_rng_state(rng_state)
+
+            # target propagation and forward update
             forward_training_outputs: Dict = model.forward_loss(x, y, phase="train")
             forward_loss: Tensor = forward_training_outputs["loss"]
             forward_optimizer = model.forward_optimizer
