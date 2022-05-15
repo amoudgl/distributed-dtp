@@ -13,7 +13,7 @@ hparams:
 
   f_optim:
     _target_: torch.optim.SGD
-    lr: 0.08
+    lr: 0.05
     weight_decay: 1e-4
     momentum: 0.9
 
