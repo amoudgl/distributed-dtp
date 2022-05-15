@@ -33,6 +33,8 @@ class LayerParallelTrainer:
         # setup distributed processes
         processes = []
         mp.set_start_method("spawn")
+        queue = mp.Queue()
+        done = mp.Event()
         # number of layers must be equal to number of processes for layer parallel feedback weight training
         size = len(model.backward_net)
         for rank in range(size):
@@ -40,14 +42,21 @@ class LayerParallelTrainer:
             os.environ["CUDA_VISIBLE_DEVICES"] = str(rank % self.gpus)
             p = mp.Process(
                 target=init_process,
-                args=(rank, size, self.fit_worker, self.backend, model, datamodule),
+                args=(rank, size, self.fit_worker, self.backend, model, datamodule, queue, done),
             )
             p.start()
             processes.append(p)
+
+        # fetch trained model
+        state_dict_trained = queue.get()
+        done.set()
+        model.load_state_dict(state_dict_trained)
+
         for p in processes:
             p.join()
+        return model
 
-    def fit_worker(self, rank, size, model, datamodule):
+    def fit_worker(self, rank, size, model, datamodule, queue, done):
         self.device = torch.device("cuda:0")  # each process will see only one GPU
         print(f"[rank {rank}] using seed: {self.seed}")
 
@@ -85,6 +94,10 @@ class LayerParallelTrainer:
             if dist.get_rank() == 0:
                 summary = f"[epoch {epoch}] top1:{top1:4.4f} top5:{top5:4.4f}"
                 print(summary)
+
+        if dist.get_rank() == 0:  # send model to global memory
+            queue.put(model.cpu().state_dict())
+            done.wait()
 
     def train_epoch(self, model, train_dataloader, optim_config):
         model.train()
