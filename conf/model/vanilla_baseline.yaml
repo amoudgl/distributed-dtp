@@ -1,0 +1,13 @@
+# CIFAR-10 defaults
+# checkout README or conf/reproduce directory for good defaults for other dataset + model configurations
+_target_: target_prop.models.VanillaBaselineModel
+hparams:
+  use_scheduler: True
+  max_epochs: 90
+  early_stopping_patience: 0
+
+  f_optim:
+    _target_: torch.optim.SGD
+    lr: 0.05
+    weight_decay: 1e-4
+    momentum: 0.9
