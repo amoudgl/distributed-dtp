@@ -1,10 +1,16 @@
-# Revisiting Difference Target Propagation
+# Distributed DTP
 
-The following code runs on Python > 3.6 with Pytorch 1.7.0.
+This repository contains the distributed implementation of our work "Towards Scaling Difference Target Propagation with Backprop Targets" accepted to ICML 2022. It implements a custom distributed scheme for our proposed Difference Target Propagation (DTP) algorithm by parallelizing feedback weight training.
+
+![implementation design](img/distributed_dtp_design.png)
+
 ## Installation
+
 ```
 pip install -e .
 ```
+
+The following code runs on Python > 3.6 with Pytorch 1.7.0.
 
 ## Running the code
 
@@ -75,18 +81,13 @@ python main.py \
     model.hparams.b_optim.lr=[1e-4,3.5e-4,8e-3,8e-3,0.18]
 ```
 
-### Legacy Implementation
-To check training on CIFAR-10, type the following command in the terminal:
+## Results
 
-```
-python main.py --batch-size 128 \
-    --C 128 128 256 256 512 \
-    --iter 20 30 35 55 20 \
-    --epochs 90 \
-    --lr_b 1e-4 3.5e-4 8e-3 8e-3 0.18 \
-    --noise 0.4 0.4 0.2 0.2 0.08 \
-    --lr_f 0.08 \
-    --beta 0.7 \
-    --path CIFAR-10 \
-    --scheduler --wdecay 1e-4
-```
+This distributed implementation achieves the same overall performance as the default sequential one but finishes much faster depending on the resources available for workers. Following is an example comparing the two implementations on CIFAR-10:
+
+![results](img/training_plots.png)
+
+(Left) Top1 validation accuracy plots on CIFAR-10 comparing default sequential DTP and our distributed DTP implementation. Our distributed DTP implementation achieves same performance as sequential DTP. (Right) Same Top1 validation accuracy on CIFAR-10 plotted against wall clock time. Our distributed DTP implementation finishes in less than 1/4th time of the sequential DTP by utilizing 2 RTX 3090 GPUs.
+
+## License
+MIT
