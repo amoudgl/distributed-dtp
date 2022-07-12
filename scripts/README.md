@@ -1,4 +1,4 @@
-## Benchmark 
+## Benchmark
 
 You can use the benchmark script to log time, memory usage and performance of any run. It keeps the same training config but just trains for 10 epochs N times where N can be passed through command line by `+num_runs=10`. Following are some commands useful for benchmarking:
 
@@ -16,8 +16,8 @@ python benchmark.py \
     ++trainer.enable_checkpointing=false \
     ++trainer.limit_val_batches=0 \
     ++trainer.num_sanity_val_steps=0 \
-    ++trainer.enable_model_summary=false 
-    
+    ++trainer.enable_model_summary=false
+
 ```
 
 

@@ -13,14 +13,15 @@ from simple_parsing.helpers import list_field, subparsers
 from simple_parsing.helpers.fields import choice
 from simple_parsing.helpers.hparams import uniform
 from simple_parsing.helpers.hparams.hparam import log_uniform
+from torch import Tensor, nn
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.optimizer import Optimizer
+
 from target_prop.feedback_loss import get_feedback_loss_parallel
 from target_prop.layers import forward_all, forward_each
 from target_prop.metrics import compute_dist_angle
 from target_prop.networks import Network
 from target_prop.utils import is_trainable
-from torch import Tensor, nn
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.optim.optimizer import Optimizer
 
 from .dtp import DTP
 from .utils import make_stacked_feedback_training_figure

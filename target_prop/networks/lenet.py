@@ -6,8 +6,9 @@ from omegaconf import DictConfig
 from simple_parsing.helpers import choice, list_field
 from simple_parsing.helpers.hparams.hparam import categorical, log_uniform, uniform
 from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
-from target_prop.layers import MaxPool2d, Reshape
 from torch import nn
+
+from target_prop.layers import MaxPool2d, Reshape
 
 
 class LeNet(nn.Sequential):

@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from omegaconf import DictConfig
 from simple_parsing.helpers import choice, list_field
 from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
+
 from target_prop.backward_layers import invert
 from target_prop.layers import AdaptiveAvgPool2d, Reshape
 

@@ -1,5 +1,5 @@
 """
-This script iterates over all combinations of hyper-parameters provided in sweep config 
+This script iterates over all combinations of hyper-parameters provided in sweep config
 and submits batch job for each experiment to ComputeCanada cluster.
 """
 import itertools
@@ -15,7 +15,7 @@ if __name__ == "__main__":
 
     # Hyper params to sweep over
     sweep_config = [
-        [            
+        [
             "--batch_size 256",
         ],
         [
@@ -23,7 +23,7 @@ if __name__ == "__main__":
         ],
         [
             "--dataset imagenet32",
-        ],        
+        ],
         [
             "--seed 124",
             "--seed 125",
@@ -42,7 +42,9 @@ if __name__ == "__main__":
     ]
     init_commands = f"module load python/3.8 && source /scratch/{user}/py38/bin/activate && cd /scratch/{user}/scalingDTP && export WANDB_MODE=offline"
     python_command = f"python main_pl.py run {algo} {network}"
-    sbatch_command = f"sbatch --gres=gpu:1 --account={account} --time={time} --cpus-per-task=16 --mem=48G"
+    sbatch_command = (
+        f"sbatch --gres=gpu:1 --account={account} --time={time} --cpus-per-task=16 --mem=48G"
+    )
 
     # Submit batch jobs for all combinations
     all_args = list(itertools.product(*sweep_config))

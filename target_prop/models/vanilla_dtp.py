@@ -9,10 +9,11 @@ from omegaconf import DictConfig
 from pytorch_lightning import LightningDataModule
 from simple_parsing.helpers import list_field
 from simple_parsing.helpers.hparams import categorical, log_uniform, uniform
-from target_prop.utils import repeat_batch
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.optim.optimizer import Optimizer
+
+from target_prop.utils import repeat_batch
 
 logger = getLogger(__name__)
 from .dtp import DTP

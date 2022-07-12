@@ -12,6 +12,9 @@ from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import Trainer
 from pytorch_lightning.utilities.seed import seed_everything
 from simple_parsing.helpers.hparams.hyperparameters import HyperParameters
+from torch import Tensor, nn
+from torch.nn import functional as F
+
 from target_prop._weight_operations import init_symetric_weights
 from target_prop.backward_layers import mark_as_invertible
 from target_prop.layers import Reshape, forward_all, invert
@@ -22,8 +25,6 @@ from target_prop.networks.lenet import LeNet
 from target_prop.networks.resnet import ResNet18, ResNet34
 from target_prop.networks.simple_vgg import SimpleVGG
 from target_prop.utils import named_trainable_parameters
-from torch import Tensor, nn
-from torch.nn import functional as F
 
 # networks = [SimpleVGG, ResNet18, ResNet34, LeNet]
 networks = ["simple_vgg", "lenet"]

@@ -1,5 +1,5 @@
 # @package _global_
-################# META ####################    
+################# META ####################
 seed: 123
 debug: false
 data_dir: /home/amoudgl/Projects/data

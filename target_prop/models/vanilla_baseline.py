@@ -15,11 +15,12 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.utilities.seed import seed_everything
 from simple_parsing.helpers import choice, list_field, subparsers
 from simple_parsing.helpers.hparams import log_uniform
-from target_prop.layers import MaxPool2d, Reshape
 from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.optim.optimizer import Optimizer
 from torchmetrics.classification import Accuracy
+
+from target_prop.layers import MaxPool2d, Reshape
 
 T = TypeVar("T")
 logger = getLogger(__name__)

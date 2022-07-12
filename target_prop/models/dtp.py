@@ -10,6 +10,11 @@ from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning import LightningDataModule, LightningModule, Trainer
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.utilities.seed import seed_everything
+from torch import Tensor, nn
+from torch.nn import functional as F
+from torch.optim.optimizer import Optimizer
+from torchmetrics.classification.accuracy import Accuracy
+
 from target_prop._weight_operations import init_symetric_weights
 from target_prop.backward_layers import invert, mark_as_invertible
 from target_prop.callbacks import CompareToBackpropCallback
@@ -18,10 +23,6 @@ from target_prop.layers import forward_all
 from target_prop.metrics import compute_dist_angle
 from target_prop.networks import Network
 from target_prop.utils import is_trainable
-from torch import Tensor, nn
-from torch.nn import functional as F
-from torch.optim.optimizer import Optimizer
-from torchmetrics.classification.accuracy import Accuracy
 
 from .utils import make_stacked_feedback_training_figure
 

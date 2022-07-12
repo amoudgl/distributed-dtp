@@ -22,7 +22,9 @@ def imagenet32_normalization():
 
 
 def imagenet32_3xstd_normalization():
-    normalize = transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(3*0.229, 3*0.224, 3*0.225))
+    normalize = transforms.Normalize(
+        mean=(0.485, 0.456, 0.406), std=(3 * 0.229, 3 * 0.224, 3 * 0.225)
+    )
     return normalize
 
 

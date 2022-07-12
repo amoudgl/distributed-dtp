@@ -33,6 +33,6 @@ setuptools.setup(
         "plotly",
         "torchmetrics",
         "hydra-core",
-        "simple-parsing"
+        "simple-parsing",
     ],
 )
