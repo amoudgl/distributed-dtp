@@ -7,7 +7,7 @@ data_dir: /home/amoudgl/Projects/data
 datamodule:
   _target_: target_prop.datasets.CIFAR10DataModule
   batch_size: 128
-  num_workers: 8
+  num_workers: 1
   pin_memory: true
   shuffle: true
   train_transforms:
@@ -20,7 +20,7 @@ datamodule:
       padding: 4
       padding_mode: edge
     - _target_: torchvision.transforms.ToTensor
-    - _target_: target_prop.datasets.imagenet32_normalization
+    - _target_: target_prop.datasets.cifar10_normalization
   val_transforms:
     _target_: torchvision.transforms.Compose
     transforms:
@@ -31,36 +31,50 @@ datamodule:
       padding: 4
       padding_mode: edge
     - _target_: torchvision.transforms.ToTensor
-    - _target_: target_prop.datasets.imagenet32_normalization
+    - _target_: target_prop.datasets.cifar10_normalization
   test_transforms:
     _target_: torchvision.transforms.Compose
     transforms:
     - _target_: torchvision.transforms.ToTensor
-    - _target_: target_prop.datasets.imagenet32_normalization
+    - _target_: target_prop.datasets.cifar10_normalization
 
 ################# MODEL ####################
 model:
-  _target_: target_prop.models.BaselineModel
+  _target_: target_prop.models.LayerParallelDTP
   hparams:
-    use_scheduler: True
-    max_epochs: 90
+    use_scheduler: true
+    feedback_training_iterations:
+    - 20
+    - 30
+    - 35
+    - 55
+    - 20
+    noise:
+    - 0.4
+    - 0.4
+    - 0.2
+    - 0.2
+    - 0.08
+    beta: 0.7
+    feedback_samples_per_iteration: 1
     early_stopping_patience: 0
-
+    init_symetric_weights: false
+    plot_every: 10000
     f_optim:
       _target_: torch.optim.SGD
       lr: 0.05
-      weight_decay: 1e-4
+      weight_decay: 0.0001
       momentum: 0.9
-
-
-################# SCHEDULER ####################
-scheduler:
-  lr_scheduler:
-    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
-    T_max: 85
-    eta_min: 1.0e-05
-  interval: epoch
-  frequency: 1
+    b_optim:
+      _target_: torch.optim.SGD
+      lr:
+      - 0.0001
+      - 0.00035
+      - 0.008
+      - 0.008
+      - 0.18
+      weight_decay: 0
+      momentum: 0.9
 
 ################# NETWORK ####################
 network:
@@ -77,16 +91,19 @@ network:
 
 ################# TRAINER ####################
 trainer:
-  _target_: pytorch_lightning.Trainer
+  _target_: target_prop.trainers.LayerParallelTrainer
   max_epochs: 90
-  gpus: 1
-  accelerator: null
-  reload_dataloaders_every_epoch: false
-  detect_anomaly: true
-  limit_train_batches: 1.0
-  limit_val_batches: 1.0
-  limit_test_batches: 1.0
-  enable_checkpointing: true
-  profiler: null
+  gpus: 6
+  seed: ${seed}
+  backend: gloo
   logger:
     _target_: pytorch_lightning.loggers.WandbLogger
+
+################# SCHEDULER ####################
+scheduler:
+  lr_scheduler:
+    _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+    T_max: 85
+    eta_min: 1.0e-05
+  interval: epoch
+  frequency: 1
